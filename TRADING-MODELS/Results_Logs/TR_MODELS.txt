@@ -1,0 +1,26 @@
+TR_MODEL 2 (With BE rules, it lets winners run longer) MAIN MODEL: 
+
+Trades: 946 | Final Equity: 299.8842
+CAGR: 76.24%
+Sharpe (ann.): 9.12
+Profit Factor: 2.39
+Win Rate (strict >0): 24.21%
+PF (BE-adj): 2.40 | WR (>=0): 24.31% | WR (BE-adj): 25.79%
+Breakeven trades: 79 (near-zero: 22; median ret: -0.263%)
+BE epsilon used: 0.10%
+
+--- Full metrics dict ---
+CAGR: 76.244138%
+Sharpe: 9.116044
+ProfitFactor: 2.391785
+WinRate: 24.207188%
+FinalEquity: 299.884227
+NumTrades: 946
+WinRate_GE0: 24.312896%
+WinRate_BEAdj: 25.792812%
+ProfitFactor_BEAdj: 2.395164
+BreakevenCount: 79
+BreakevenNearZeroCount: 22
+BreakevenMedianRet: -0.262777%
+BE_Epsilon: 0.100000%
+

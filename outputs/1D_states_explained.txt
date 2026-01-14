@@ -1,0 +1,3 @@
+State 0 -> Mean Reversion
+State 1 -> Longs Only
+State 2 -> Shorts Only / Sit Out
