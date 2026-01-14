@@ -1,0 +1,14 @@
+{
+  "best_params": {
+    "adx_min": 25,
+    "r2_min": 0.25,
+    "thrust_atr_mult": 1.0,
+    "clv_min": 0.55,
+    "be_activate_atr": 1.0
+  },
+  "WinRate": 0.3275862068965517,
+  "ProfitFactor": 2.0699723326864423,
+  "CAGR": 0.20985226023103642,
+  "Sharpe": 5.954451234266586,
+  "NumTrades": 116
+}

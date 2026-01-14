@@ -17,7 +17,7 @@ TR3 = {
     "adx_min": 14,
     "r2_min": 0.10,
     "clv_min": 0.55,
-    "thrust_atr_mult": 0.50,
+    "thrust_atr_mult": 0.75,
 
     # Trend structure
     "ema_fast": 50,

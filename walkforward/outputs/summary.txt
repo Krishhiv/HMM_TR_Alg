@@ -1,0 +1,10 @@
+Holdout summary (Train+Val fit, Test only)
+Train end: 2019-12-31
+Val end:   2021-12-31
+Trades: 299
+Final Equity: 3.2883
+CAGR: 38.26%
+Sharpe: 6.86
+Sharpe (Daily): 1.46
+Profit Factor: 2.03
+Win Rate: 23.75%
