@@ -1,0 +1,42 @@
+{
+  "BTC-USD": {
+    "start_date": "2015-08-09 00:00:00+00:00",
+    "path": "data/coinbase_1h/BTC-USD_1h.csv"
+  },
+  "ETH-USD": {
+    "start_date": "2016-05-18 00:00:00+00:00",
+    "path": "data/coinbase_1h/ETH-USD_1h.csv"
+  },
+  "LTC-USD": {
+    "start_date": "2016-08-17 04:00:00+00:00",
+    "path": "data/coinbase_1h/LTC-USD_1h.csv"
+  },
+  "LINK-USD": {
+    "start_date": "2019-06-27 16:00:00+00:00",
+    "path": "data/coinbase_1h/LINK-USD_1h.csv"
+  },
+  "SOL-USD": {
+    "start_date": "2021-06-17 16:00:00+00:00",
+    "path": "data/coinbase_1h/SOL-USD_1h.csv"
+  },
+  "AVAX-USD": {
+    "start_date": "2021-09-30 19:00:00+00:00",
+    "path": "data/coinbase_1h/AVAX-USD_1h.csv"
+  },
+  "POL-USD": {
+    "start_date": "2024-09-04 22:00:00+00:00",
+    "path": "data/coinbase_1h/POL-USD_1h.csv"
+  },
+  "DOT-USD": {
+    "start_date": "2021-06-16 16:00:00+00:00",
+    "path": "data/coinbase_1h/DOT-USD_1h.csv"
+  },
+  "NEAR-USD": {
+    "start_date": "2022-09-01 16:00:00+00:00",
+    "path": "data/coinbase_1h/NEAR-USD_1h.csv"
+  },
+  "AAVE-USD": {
+    "start_date": "2020-12-15 17:00:00+00:00",
+    "path": "data/coinbase_1h/AAVE-USD_1h.csv"
+  }
+}
