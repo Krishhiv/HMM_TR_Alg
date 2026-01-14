@@ -7,16 +7,28 @@
 
 ## Assumptions (Confirmed)
 - Data source: Coinbase preferred (Binance acceptable fallback); use Coinbase as primary.
-- Universe: Top-25 by market cap, refreshed weekly; exclude stablecoins (USDT, USDC, etc.).
+- Universe: Curated 10-asset class (BTC, ETH, SOL, AVAX, DOT, LINK, AAVE, BNB, LTC, NEAR); refreshed weekly; exclude stablecoins.
 - Trading timeframe: 1h; execution at bar open.
 - Fees/slippage: use average assumptions (simple fixed bps per side + modest slippage).
 - Optimization cadence: every 2 weeks.
 
+## Asset Class (Curated Universe)
+- The Anchor: BTC — High stability; primary trend setter for the model.
+- The Proxy: ETH — Often leads "Altseason" moves after BTC stabilizes.
+- High-Beta Speed: SOL — Extreme "Thrust" potential; trends harder than BTC.
+- Ecosystem Lead: AVAX — Responsive to momentum shifts; good for regime detection.
+- Interoperability: DOT — Different cycle than pure "Layer 1" coins.
+- Infrastructure: LINK — Relative strength; holds up when others drop.
+- DeFi Bluechip: AAVE — DeFi proxy; non-correlated "Thrust" signals.
+- Exchange Play: POL — Exchange utility; trends when the market is flat.
+- Legacy Alts: LTC — Clean breakouts for Donchian channels.
+- The "Wildcard": NEAR — High volatility; strong tail-wins when trending.
+
 ## Phase 0 — Requirements Lock-In
 - Universe definition:
-  - Source of top-25 market-cap list.
-  - Refresh schedule: weekly.
-  - Exclusions: stablecoins (USDT, USDC, etc.).
+  - Source of curated 10-asset list (fixed list above).
+  - Refresh schedule: weekly (validate listing still meets criteria).
+  - Exclusions: stablecoins.
 - Data vendor decision:
   - Coinbase primary; Binance fallback if Coinbase coverage is missing.
   - Ensure 1h + 1d OHLCV coverage for all top-25 assets.
