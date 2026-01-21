@@ -1,0 +1,97 @@
+{
+  "data_file": "EngineB/Data/BTC-USD_15m_lr_dataset.csv",
+  "train_end": "2019-12-31",
+  "val_end": "2021-12-31",
+  "features": [
+    "spread",
+    "spread_vel",
+    "vol_pct_500",
+    "time_since_vwap"
+  ],
+  "models": {
+    "y_16": {
+      "model_path": "EngineB/Logistic-Reg/models/model_y_16.joblib",
+      "metrics": {
+        "val_auc": 0.6697195405914412,
+        "val_log_loss": 0.5629749110396108,
+        "val_brier": 0.18977302362766738,
+        "test_auc": 0.6658704428674076,
+        "test_log_loss": 0.5390269100443839,
+        "test_brier": 0.17915164252573504,
+        "train_rows": 154232,
+        "val_rows": 70075,
+        "test_rows": 142281
+      }
+    },
+    "y_17": {
+      "model_path": "EngineB/Logistic-Reg/models/model_y_17.joblib",
+      "metrics": {
+        "val_auc": 0.6667599545313397,
+        "val_log_loss": 0.5492417803763254,
+        "val_brier": 0.1837220420820517,
+        "test_auc": 0.6624600421602992,
+        "test_log_loss": 0.5230712227891827,
+        "test_brier": 0.17216227893306307,
+        "train_rows": 154232,
+        "val_rows": 70075,
+        "test_rows": 142280
+      }
+    },
+    "y_18": {
+      "model_path": "EngineB/Logistic-Reg/models/model_y_18.joblib",
+      "metrics": {
+        "val_auc": 0.6642316053068145,
+        "val_log_loss": 0.535114737506261,
+        "val_brier": 0.17752844525024608,
+        "test_auc": 0.6589549717652259,
+        "test_log_loss": 0.5070193639954587,
+        "test_brier": 0.1651799572742673,
+        "train_rows": 154232,
+        "val_rows": 70075,
+        "test_rows": 142279
+      }
+    },
+    "y_19": {
+      "model_path": "EngineB/Logistic-Reg/models/model_y_19.joblib",
+      "metrics": {
+        "val_auc": 0.6617119125636353,
+        "val_log_loss": 0.520896796059728,
+        "val_brier": 0.17132225784681496,
+        "test_auc": 0.6557129672440746,
+        "test_log_loss": 0.4909282527256605,
+        "test_brier": 0.15823548685232133,
+        "train_rows": 154232,
+        "val_rows": 70075,
+        "test_rows": 142278
+      }
+    },
+    "y_20": {
+      "model_path": "EngineB/Logistic-Reg/models/model_y_20.joblib",
+      "metrics": {
+        "val_auc": 0.6591229604577555,
+        "val_log_loss": 0.5066701305047081,
+        "val_brier": 0.16514644250271193,
+        "test_auc": 0.6523382872947283,
+        "test_log_loss": 0.4748166063807003,
+        "test_brier": 0.1513376008219874,
+        "train_rows": 154232,
+        "val_rows": 70075,
+        "test_rows": 142277
+      }
+    },
+    "y_21": {
+      "model_path": "EngineB/Logistic-Reg/models/model_y_21.joblib",
+      "metrics": {
+        "val_auc": 0.6566697610368425,
+        "val_log_loss": 0.49240199420346836,
+        "val_brier": 0.15899726380069976,
+        "test_auc": 0.6487642621439205,
+        "test_log_loss": 0.45882009690670345,
+        "test_brier": 0.1445524236183585,
+        "train_rows": 154232,
+        "val_rows": 70075,
+        "test_rows": 142276
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+=== Logistic Regression Model Analysis ===
+Report: EngineB/Logistic-Reg/outputs/train_report.json
+
+Per-horizon metrics (test):
+- y_16: AUC=0.6659 logloss=0.5390 brier=0.1792 (model=EngineB/Logistic-Reg/models/model_y_16.joblib)
+- y_17: AUC=0.6625 logloss=0.5231 brier=0.1722 (model=EngineB/Logistic-Reg/models/model_y_17.joblib)
+- y_18: AUC=0.6590 logloss=0.5070 brier=0.1652 (model=EngineB/Logistic-Reg/models/model_y_18.joblib)
+- y_19: AUC=0.6557 logloss=0.4909 brier=0.1582 (model=EngineB/Logistic-Reg/models/model_y_19.joblib)
+- y_20: AUC=0.6523 logloss=0.4748 brier=0.1513 (model=EngineB/Logistic-Reg/models/model_y_20.joblib)
+- y_21: AUC=0.6488 logloss=0.4588 brier=0.1446 (model=EngineB/Logistic-Reg/models/model_y_21.joblib)
+
+Selection rule:
+- Maximize test AUC
+- Tie-breaker: minimize test log loss
+- Tie-breaker: minimize test Brier score
+
+Best model:
+- y_16 | AUC=0.6659 logloss=0.5390 brier=0.1792
+- path: EngineB/Logistic-Reg/models/model_y_16.joblib
