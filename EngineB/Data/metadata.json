@@ -1,6 +1,6 @@
 {
   "BTC-USD": {
     "start_date": "2015-08-01 00:00:00+00:00",
-    "path": "EngineB/Data/BTC-USD_15m.csv"
+    "path": "EngineB/Data/BTC-USD_5m.csv"
   }
 }
