@@ -1,0 +1,7 @@
+rows: 367322
+start: 2015-08-01T00:00:00+00:00
+end: 2026-01-21T06:15:00+00:00
+expected_bars: 367322
+missing_bars: 0
+duplicate_dates: 0
+missing_columns: FairValue, EWMAVol, ZScore, RangePct, LiquidityCostProxy

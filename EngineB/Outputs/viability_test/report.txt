@@ -1,0 +1,161 @@
+==========================================================================================
+Loading data
+==========================================================================================
+Loaded 5m rows:  1,101,364
+Loaded 15m rows: 367,123
+
+==========================================================================================
+Schema checks
+==========================================================================================
+[OK]   5m: has all required columns (12)
+[OK]   15m: has all required columns (7)
+
+==========================================================================================
+Time index integrity
+==========================================================================================
+[OK]   5m: spacing is perfectly regular at 5m
+[OK]   15m: spacing is perfectly regular at 15m
+
+==========================================================================================
+OHLCV integrity
+==========================================================================================
+[OK]   5m: OHLC bounds look consistent
+[OK]   5m: volume is non-negative
+[OK]   15m: OHLC bounds look consistent
+[OK]   15m: volume is non-negative
+
+==========================================================================================
+NaN/Inf scan
+==========================================================================================
+[OK]   5m: no NaNs in numeric columns (after coercion)
+[OK]   5m: no inf values in numeric columns
+[OK]   15m: no NaNs in numeric columns (after coercion)
+[OK]   15m: no inf values in numeric columns
+
+==========================================================================================
+5m Feature Check: RangePct
+==========================================================================================
+Detected RangePct scale: decimal (internally standardized to decimal)
+Median |RangePct - (H-L)/C|  = 0.000000
+P95    |RangePct - (H-L)/C|  = 0.000000
+[OK]   RangePct appears consistent with (High-Low)/Close
+
+==========================================================================================
+5m Feature Check: LiquidityCostProxy
+==========================================================================================
+Detected LiquidityCostProxy scale: decimal (internally standardized to decimal)
+Median |LP - max(0.0002, 0.10*RangePct)| = 0.000000
+P95    |LP - max(0.0002, 0.10*RangePct)| = 0.000000
+[OK]   LiquidityCostProxy appears consistent with the OHLC-based proxy formula
+
+==========================================================================================
+5m Feature Check: ZScore self-consistency
+==========================================================================================
+Corr(ZScore, (Close-FV)/EWMAVol)                = 1.0000 ; median abs residual = 0.000000
+Corr(ZScore, (Close-FV)/(EWMAVol*Close))        = 0.436370 ; median abs residual = 0.654222
+[OK]   ZScore is more consistent with EWMAVol in PRICE units (sigma_price).
+[OK]   EWMAVol is positive (post coercion, including warmup rows)
+[OK]   FairValue stays reasonably near Close (heuristic check)
+
+==========================================================================================
+No-lookahead Check: 5m Hurst15m piecewise constancy
+==========================================================================================
+15m buckets checked: 367122
+Buckets where Hurst15m changes within the 3x 5m bars: 0
+[OK]   Hurst15m is constant within each 15m bucket (expected for 5m using 15m regime).
+
+==========================================================================================
+No-lookahead Check: 5m Hurst15m == previous 15m Hurst
+==========================================================================================
+Comparable 5m rows: 1101364
+Exact match rate:   1.0000
+P95 abs difference: 0.000000
+[OK]   5m Hurst15m matches previous 15m candle's Hurst (shifted correctly).
+
+==========================================================================================
+Mean Reversion Viability: ZScore distribution & signal frequency
+==========================================================================================
+Z mean  = 0.029610
+Z std   = 0.960870
+Z p01   = -2.2612
+Z p05   = -1.5714
+Z p50   = 0.058002
+Z p95   = 1.5538
+Z p99   = 2.2325
+
+Fresh signals (crossing |Z|>2.0): total=24544 long=13056 short=11488
+
+==========================================================================================
+Mean Reversion Viability: Conditional forward returns (signed)
+==========================================================================================
+Horizon 12 bars: mean=-0.000142  median=0.000455  hit_rate(>0)=0.549362
+Horizon 24 bars: mean=-0.000024  median=0.000669  hit_rate(>0)=0.553437
+Horizon 48 bars: mean=0.000033  median=0.000909  hit_rate(>0)=0.551644
+Horizon 72 bars: mean=0.000087  median=0.001070  hit_rate(>0)=0.548914
+
+==========================================================================================
+Mean Reversion Viability: Target-before-stop event study (Z-only)
+==========================================================================================
+TARGET: 20726 (84.44%)
+  STOP: 3239 (13.20%)
+  TIME: 579 (2.36%)
+
+Avg BarsToOutcome (all):   22.2159
+Avg BarsToOutcome (TARGET): 23.1408
+
+==========================================================================================
+Mean Reversion Viability: OU/AR(1) half-life on (Close - FairValue)
+==========================================================================================
+AR(1) b coefficient: 0.895829
+Half-life (bars):    6.3010  (~0.525086 hours at 5m bars)
+[OK]   Half-life is defined (0<b<1). Smaller is faster mean reversion.
+
+==========================================================================================
+Diagnostics: autocorrelation (lags 1..12)
+==========================================================================================
+Return autocorr:
+  lag  1: -0.031551
+  lag  2: -0.024164
+  lag  3: 0.005477
+  lag  4: -0.002276
+  lag  5: -0.006811
+  lag  6: -0.003541
+  lag  7: -0.001557
+  lag  8: 0.000494
+  lag  9: -0.002885
+  lag 10: 0.000779
+  lag 11: 0.000066
+  lag 12: -0.003190
+
+ZScore autocorr:
+  lag  1: 0.846546
+  lag  2: 0.726047
+  lag  3: 0.627432
+  lag  4: 0.543406
+  lag  5: 0.472947
+  lag  6: 0.413350
+  lag  7: 0.362332
+  lag  8: 0.317800
+  lag  9: 0.279374
+  lag 10: 0.245531
+  lag 11: 0.215666
+  lag 12: 0.189831
+
+==========================================================================================
+Mean Reversion Viability: Hurst distribution (from 5m dataset)
+==========================================================================================
+Quantile 0.01: 0.210033
+Quantile 0.05: 0.280644
+Quantile 0.25: 0.378668
+Quantile  0.5: 0.440114
+Quantile 0.75: 0.498074
+Quantile 0.95: 0.576568
+Quantile 0.99: 0.627479
+
+Share H < 0.50  (good for MR): 0.758045
+Share H < 0.45  (strong MR):  0.544844
+Share H >= 0.55 (trendy):     0.092362
+
+==========================================================================================
+Done
+==========================================================================================

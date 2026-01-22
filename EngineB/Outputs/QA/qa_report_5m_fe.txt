@@ -1,0 +1,14 @@
+rows: 1101964
+start: 2015-08-01T00:00:00+00:00
+end: 2026-01-21T06:15:00+00:00
+expected_bars: 1101964
+missing_bars: 0
+duplicate_dates: 0
+invalid_ohlc_rows: 0
+return_outliers_gt_10pct: 6
+first_outlier_date: 2017-03-10T21:00:00+00:00
+zero_volume_rows: 1752
+nan_fair_value: 0
+nan_ewma_vol: 0
+nan_zscore: 0
+nan_hurst15m: 0

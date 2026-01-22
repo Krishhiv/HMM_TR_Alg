@@ -1,0 +1,10 @@
+rows: 1102036
+start: 2015-08-01T00:00:00+00:00
+end: 2026-01-21T12:15:00+00:00
+expected_bars: 1102036
+missing_bars: 0
+duplicate_dates: 0
+invalid_ohlc_rows: 0
+return_outliers_gt_10pct: 6
+first_outlier_date: 2017-03-10T21:00:00+00:00
+zero_volume_rows: 1752
