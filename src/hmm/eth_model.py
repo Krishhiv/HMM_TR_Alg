@@ -389,7 +389,12 @@ class ETHRegimeDetector:
         return self
     
     def predict(self, df: pd.DataFrame, relabel: bool = True) -> pd.Series:
-        """Predict states for data."""
+        """
+        Predict states using Viterbi (full sequence).
+        
+        WARNING: Has subtle lookahead on test data.
+        For realistic backtests, use predict_online() instead.
+        """
         if self.model is None:
             raise ValueError("Model not fitted")
         
@@ -407,13 +412,128 @@ class ETHRegimeDetector:
         result = pd.Series(states, index=df.index, name=f"State_K{self.k}")
         
         # Relabel states by average return
-        if relabel:
+        if relabel and self.state_mapping:
+            result = result.map(self.state_mapping)
+        elif relabel:
             df_temp = df.copy()
             df_temp["state"] = result
             self.state_mapping = relabel_states_by_return(df_temp, "state")
             result = result.map(self.state_mapping)
         
         return result
+    
+    def predict_online(self, df: pd.DataFrame, lookback: int = 60) -> pd.Series:
+        """
+        Predict states day-by-day without lookahead (realistic for live trading).
+        
+        For each day t, only data up to day t-1 is used for prediction.
+        This simulates what you'd actually know at market open on day t.
+        
+        Args:
+            df: Daily DataFrame with required features
+            lookback: Number of days to use for each prediction (rolling window)
+        
+        Returns:
+            Series of states indexed by date (state known at market open)
+        """
+        if self.model is None:
+            raise ValueError("Model not fitted")
+        
+        df = compute_daily_features(df)
+        df = df.dropna(subset=HMM_FEATURES + ["Close"]).copy()
+        
+        X = df[HMM_FEATURES].values
+        Xs = self.scaler.transform(X)
+        
+        n = len(Xs)
+        states = np.zeros(n, dtype=int)
+        
+        for t in range(n):
+            # Use lookback window ending at YESTERDAY (t-1), not today
+            start = max(0, t - lookback)
+            X_window = Xs[start:t]  # Excludes today's observation
+            
+            if len(X_window) == 0:
+                # First day: no prior data, use neutral state
+                states[t] = 0
+            else:
+                window_states = self.model.predict(X_window)
+                states[t] = window_states[-1]
+        
+        result = pd.Series(states, index=df.index, name=f"State_K{self.k}_online")
+        
+        # Apply state mapping if available
+        if self.state_mapping:
+            result = result.map(self.state_mapping)
+        
+        return result
+    
+    def save_model(self, out_dir: Path) -> None:
+        """
+        Save trained model artifacts.
+        
+        Saves: model.pkl, scaler.pkl, state_mapping.pkl, config.json
+        """
+        import pickle
+        import json
+        
+        if self.model is None:
+            raise ValueError("Model not fitted")
+        
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        
+        with open(out_dir / "model.pkl", "wb") as f:
+            pickle.dump(self.model, f)
+        
+        with open(out_dir / "scaler.pkl", "wb") as f:
+            pickle.dump(self.scaler, f)
+        
+        with open(out_dir / "state_mapping.pkl", "wb") as f:
+            pickle.dump(self.state_mapping, f)
+        
+        config = {
+            "train_end": self.train_end,
+            "val_end": self.val_end,
+            "k": self.k,
+            "min_dwell": self.min_dwell,
+            "features": HMM_FEATURES,
+            "state_labels": STATE_LABELS,
+        }
+        with open(out_dir / "config.json", "w") as f:
+            json.dump(config, f, indent=2)
+        
+        print(f"Saved ETH model to: {out_dir}")
+    
+    @classmethod
+    def load_model(cls, model_dir: Path) -> "ETHRegimeDetector":
+        """Load a previously saved model."""
+        import pickle
+        import json
+        
+        model_dir = Path(model_dir)
+        
+        with open(model_dir / "config.json", "r") as f:
+            config = json.load(f)
+        
+        detector = cls(
+            train_end=config["train_end"],
+            val_end=config["val_end"],
+            k=config["k"],
+            min_dwell=config["min_dwell"],
+        )
+        
+        with open(model_dir / "model.pkl", "rb") as f:
+            detector.model = pickle.load(f)
+        
+        with open(model_dir / "scaler.pkl", "rb") as f:
+            detector.scaler = pickle.load(f)
+        
+        with open(model_dir / "state_mapping.pkl", "rb") as f:
+            detector.state_mapping = pickle.load(f)
+        
+        print(f"Loaded ETH model from: {model_dir}")
+        return detector
 
 
 def train_eth_hmm(

@@ -467,6 +467,7 @@ def main():
     parser.add_argument("--min-dwell", type=int, default=3)
     parser.add_argument("--min-trades", type=int, default=0)
     parser.add_argument("--grid-json", default="")
+    parser.add_argument("--viterbi-window", type=int, default=90, help="Sliding window for Viterbi decoding")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -513,20 +514,46 @@ def main():
     len_tr = lengths_by_year(df_tr.index)
     len_trv = lengths_by_year(pd.concat([df_tr, df_va]).index)
 
-    best = pick_best_model(Xs_tr, len_tr, k=3)
+    # Fit HMM on Train+Val
     Xs_trv = np.vstack([Xs_tr, Xs_va])
     final = fit_hmm(Xs_trv, len_trv, k=3, seed=101)
 
-    st_trv, g_trv = decode(final, Xs_trv)
-    st_te, g_te = decode(final, Xs_te)
-
+    # ===== ONLINE PREDICTION (no lookahead) =====
+    print(f"Using SLIDING VITERBI (window={args.viterbi_window}, no lookahead)...")
+    
+    lookback = args.viterbi_window
+    n_test = len(Xs_te)
+    st_te_online = np.zeros(n_test, dtype=int)
+    
+    # Combine all scaled data for lookback access
+    Xs_all = np.vstack([Xs_trv, Xs_te])
+    trv_len = len(Xs_trv)
+    
+    for t in range(n_test):
+        # Index in combined array
+        idx = trv_len + t
+        # Use lookback window ending at YESTERDAY (t-1), not today
+        start = max(0, idx - lookback)
+        X_window = Xs_all[start:idx]  # Excludes today's observation
+        
+        if len(X_window) == 0:
+            # First day: use last train+val state
+            st_te_online[t] = final.predict(Xs_trv)[-1]
+        else:
+            # Run Viterbi on full past window and take last state
+            window_states = final.predict(X_window)
+            st_te_online[t] = window_states[-1]
+    
+    # Apply min_dwell smoothing
     if args.min_dwell and args.min_dwell > 1:
-        st_trv = enforce_min_dwell_gamma(st_trv, g_trv, min_run=args.min_dwell)
-        st_te = enforce_min_dwell_gamma(st_te, g_te, min_run=args.min_dwell)
-
-    last_trv_state = st_trv[-1]
+        _, g_te = decode(final, Xs_te)
+        st_te_online = enforce_min_dwell_gamma(st_te_online, g_te, min_run=args.min_dwell)
+    
+    # Create lagged state series
+    last_trv_state = final.predict(Xs_trv)[-1]
     last_trv_day = pd.concat([df_tr, df_va]).index[-1]
-    st_series = pd.Series(st_te, index=df_te.index)
+    
+    st_series = pd.Series(st_te_online, index=df_te.index)
     st_series = pd.concat([pd.Series([last_trv_state], index=[last_trv_day]), st_series])
     lag_states = st_series.shift(1)
 

@@ -10,11 +10,16 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 from math import sqrt
+import sys
 
 import numpy as np
 import pandas as pd
 from hmmlearn.hmm import GaussianHMM
 from sklearn.preprocessing import StandardScaler
+
+# Add project root to path for imports
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 
 # -----------------------------
@@ -158,6 +163,46 @@ def enforce_min_dwell_gamma(path: np.ndarray, gamma: np.ndarray, min_run: int = 
                     changed = True
             i = j
     return p
+
+
+def enforce_min_dwell_causal(path: np.ndarray, min_run: int = 3) -> np.ndarray:
+    """
+    Causal min-dwell: prevents switching to a new state unless it persists
+    for at least min_run consecutive observations. Uses NO future data.
+    """
+    p = np.asarray(path, dtype=int)
+    if min_run <= 1 or len(p) == 0:
+        return p.copy()
+
+    out = p.copy()
+    current = out[0]
+    pending = None
+    pending_count = 0
+
+    for i in range(1, len(out)):
+        s = out[i]
+
+        if s == current:
+            pending = None
+            pending_count = 0
+            out[i] = current
+            continue
+
+        # s != current
+        if pending is None or pending != s:
+            pending = s
+            pending_count = 1
+        else:
+            pending_count += 1
+
+        if pending_count >= min_run:
+            current = pending
+            pending = None
+            pending_count = 0
+
+        out[i] = current
+
+    return out
 
 
 # -----------------------------
@@ -484,11 +529,45 @@ def main():
     parser.add_argument("--out-dir", default="walkforward/outputs")
     parser.add_argument("--train-end", default=TRAIN_END)
     parser.add_argument("--val-end", default=VAL_END)
-    parser.add_argument("--min-dwell", type=int, default=3)
-    parser.add_argument("--ect-window", type=int, default=40)
+    parser.add_argument("--min-dwell", type=int, default=1)
+    parser.add_argument("--ect-window", type=int, default=20, help="ECT equity SMA window (lower=more responsive)")
     parser.add_argument("--risk-high", type=float, default=1.0)
     parser.add_argument("--risk-low", type=float, default=0.5)
+    parser.add_argument("--tr3-params", default="", help="JSON file with TR3 parameter overrides")
+    # Option to use saved model
+    parser.add_argument(
+        "--use-saved-model", 
+        action="store_true",
+        help="Use saved BTCRegimeDetector from outputs/models/btc_hmm instead of inline training"
+    )
+    parser.add_argument(
+        "--model-dir",
+        default="outputs/models/btc_hmm",
+        help="Directory containing saved model.pkl, scaler.pkl, config.json"
+    )
+    # NEW: Walk-Forward Training flag
+    parser.add_argument(
+        "--walk-forward",
+        action="store_true",
+        help="Enable walk-forward periodic retraining (Live Simulation)"
+    )
+    # NEW: Sliding Viterbi window for better state detection
+    parser.add_argument(
+        "--viterbi-window",
+        type=int,
+        default=60,
+        help="Size of sliding window for Viterbi decoding (uses full window of past data)"
+    )
     args = parser.parse_args()
+
+    # Override TR3 config if provided
+    if args.tr3_params:
+        import json
+        params = json.loads(Path(args.tr3_params).read_text())
+        if "best_params" in params:
+            params = params["best_params"]  # Handle opt_best.json format
+        print(f"Overriding TR3 params: {params}")
+        TR3.update(params)
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -514,29 +593,179 @@ def main():
     if df_tr.empty or df_va.empty or df_te.empty:
         raise ValueError("One of Train/Val/Test is empty; adjust train-end or val-end.")
 
-    X_tr, X_va, X_te = df_tr[FEATURES].values, df_va[FEATURES].values, df_te[FEATURES].values
-    scaler = StandardScaler().fit(X_tr)
-    Xs_tr, Xs_va, Xs_te = scaler.transform(X_tr), scaler.transform(X_va), scaler.transform(X_te)
+    # ===== BRANCHING: Use saved model or inline training =====
+    if args.use_saved_model:
+        # Load saved BTCRegimeDetector and use predict_online
+        from src.hmm.model import BTCRegimeDetector
+        
+        model_dir = Path(args.model_dir)
+        if not (model_dir / "model.pkl").exists():
+            raise FileNotFoundError(f"No saved model found at {model_dir}. Run BTC HMM training first.")
+        
+        print(f"\nUsing SAVED MODEL from {model_dir}...")
+        detector = BTCRegimeDetector.load_model(model_dir)
+        
+        # Predict online (no lookahead) for test period
+        states_online = detector.predict_online(df_te, lookback=args.viterbi_window)
+        
+        # Create lagged state series
+        # Get last state from train+val period (using full Viterbi just for this one state)
+        states_trv = detector.predict(pd.concat([df_tr, df_va]))
+        last_trv_state = states_trv.iloc[-1]
+        
+        # states_online[t] is already the state known at market open on day t (uses data up to t-1)
+        # BUT its first day has no prior data when you pass df_te only -> seed it with last train+val state.
+        if len(states_online) > 0:
+            states_online.iloc[0] = int(last_trv_state)
 
-    len_tr = lengths_by_year(df_tr.index)
-    len_trv = lengths_by_year(pd.concat([df_tr, df_va]).index)
+        states_for_hourly = states_online.copy()
+        states_for_hourly.index = states_for_hourly.index.normalize()
+        
+    elif args.walk_forward:
+        # ===== WALK-FORWARD TRAINING (Periodic Retraining) =====
+        # 1. Start with initial Train+Val period
+        # 2. Predict next N days (rebalance_freq) using current model
+        # 3. Retrain on sliding window (e.g. 2 years)
+        # 4. Use align_states/warm_start to keep states consistent (0=Bear, 1=Neutral, 2=Bull)
+        
+        print("\nUsing WALK-FORWARD TRAINING (Live Simulation)...")
+        from src.hmm.model import fit_hmm_warm_start, align_states, DEFAULT_CONFIG
+        
+        rebalance_days = 30  # Retrain every month
+        training_window_days = 365 * 2  # 2 years of history
+        
+        # Initial training set: up to val_end (simulating start of test period)
+        # We need the full history to slice windows
+        start_idx = df_te.index[0]
+        full_history_mask = df.index < start_idx
+        
+        # Initialize loop variables
+        current_date = start_idx
+        end_date = df_te.index[-1]
+        
+        states_online_list = []
+        dates_online_list = []
+        
+        # Initial fit on [Start ... val_end]
+        # Use last 2 years of train+val for strict window adherence, or full history?
+        # Let's use sliding window of training_window_days ending at current_date
+        
+        prev_model = None
+        
+        while current_date <= end_date:
+            # Define training window: [current_date - window, current_date)
+            window_start = current_date - pd.Timedelta(days=training_window_days)
+            train_mask = (df.index >= window_start) & (df.index < current_date)
+            
+            df_window = df.loc[train_mask]
+            if len(df_window) < 100:
+                raise ValueError(f"Training window too short at {current_date}")
+            
+            # Prepare features
+            X_win = df_window[FEATURES].values
+            scaler = StandardScaler().fit(X_win) # Fit scaler on current window
+            Xs_win = scaler.transform(X_win)
+            len_win = lengths_by_year(df_window.index)
+            
+            # Fit HMM
+            if prev_model is None:
+                # First run: Fit from scratch
+                model = fit_hmm(Xs_win, len_win, k=3, seed=101)
+                # Align states: Sort by Log_Returns so State 2 is Bullish (Highest Return)
+                model = align_states(model, Xs_win, feature_idx_for_sort=0)
+            else:
+                # Retrain: Warm start from previous model + Align
+                # Note: warm start implicitly tries to keep alignment, but we force alignment again
+                # to be safe against label switching during EM
+                model = fit_hmm_warm_start(Xs_win, len_win, prev_model=prev_model, k=3, seed=101)
+                model = align_states(model, Xs_win, feature_idx_for_sort=0)
+            
+            prev_model = model
+            
+            # Predict for next `rebalance_days`
+            next_rebalance = current_date + pd.Timedelta(days=rebalance_days)
+            pred_mask = (df.index >= current_date) & (df.index < next_rebalance)
+            df_pred = df.loc[pred_mask]
+            
+            if df_pred.empty:
+                break
+                
+            # Prepare prediction features (using SAME scaler as training window)
+            X_pred = df_pred[FEATURES].values
+            Xs_pred = scaler.transform(X_pred)
+            
+            print(f"Training on window ending {current_date.date()} -> Predicting {len(df_pred)} days")
+            
+            # Predict day-by-day (Online)
+            # For each day in the chunk, we use the trained model 'model'
+            # But strictly speaking, for day t inside the chunk, we should only use data up to t
+            # Since 'model' is fixed for this chunk (like a weekly/monthly model update), 
+            # this is valid "live trading" simulation: model is updated only at the start of the month.
+            
+            # Use Viterbi/Predict on the chunk using the fixed model
+            # Note: This implies we DON'T update the HMM internal params daily, only monthly.
+            # But we can still use the sliding Viterbi window for state Inference.
+            
+            chunk_states = []
+            
+            # For decoding, we need history. We can append Xs_pred to Xs_win
+            # But to be simple and "Saved Model" like:
+            # Just predict using sliding window over the recent history we have
+            
+            # We need context from before current_date for the first few days of prediction
+            # Let's take the last (args.viterbi_window) days from training data
+            X_context = Xs_win[-args.viterbi_window:]
+            
+            Xs_combined = np.vstack([X_context, Xs_pred])
+            context_len = len(X_context)
+            
+            for t in range(len(Xs_pred)):
+                # Index in combined array corresponding to current day t
+                # We want window ending at YESTERDAY (t-1 relative to Xs_pred, so index context_len + t)
+                
+                # Wait, if we use the *fixed model for the month*, we just need the observation sequence.
+                # Just like 'predict_online' in Saved Model:
+                
+                idx = context_len + t
+                start = max(0, idx - args.viterbi_window)
+                X_w = Xs_combined[start:idx] # Exclude today
+                
+                if len(X_w) == 0:
+                     chunk_states.append(0) # Fallback
+                else:
+                    st = model.predict(X_w)[-1]
+                    chunk_states.append(st)
+                    
+            states_online_list.extend(chunk_states)
+            dates_online_list.extend(df_pred.index)
+            
+            current_date = next_rebalance
+            
+        # Combine all predictions
+        st_te_online = np.array(states_online_list)
+        # Ensure we cover the full df_te (handle end-of-loop mismatch if any)
+        # We iterated until end_date, so lists should match df_te rows roughly
+        # Let's align by index
+        states_series = pd.Series(st_te_online, index=dates_online_list)
+        states_series = states_series.reindex(df_te.index).fillna(0).astype(int)
+        
+        # Apply min_dwell (Causal)
+        if args.min_dwell > 1:
+             st_te_online = enforce_min_dwell_causal(states_series.values, min_run=args.min_dwell)
+             states_series = pd.Series(st_te_online, index=df_te.index)
 
-    pick_best_model(Xs_tr, len_tr, k=3)
-    Xs_trv = np.vstack([Xs_tr, Xs_va])
-    final = fit_hmm(Xs_trv, len_trv, k=3, seed=101)
-
-    st_trv, g_trv = decode(final, Xs_trv)
-    st_te, g_te = decode(final, Xs_te)
-
-    if args.min_dwell and args.min_dwell > 1:
-        st_trv = enforce_min_dwell_gamma(st_trv, g_trv, min_run=args.min_dwell)
-        st_te = enforce_min_dwell_gamma(st_te, g_te, min_run=args.min_dwell)
-
-    last_trv_state = st_trv[-1]
-    last_trv_day = pd.concat([df_tr, df_va]).index[-1]
-    st_series = pd.Series(st_te, index=df_te.index)
-    st_series = pd.concat([pd.Series([last_trv_state], index=[last_trv_day]), st_series])
-    lag_states = st_series.shift(1)
+        # states_series is ALREADY the state for today (derived from yesterday's data)
+        # So it IS "lag1d". No need to shift again.
+        states_for_hourly = states_series.copy()
+        states_for_hourly.index = states_for_hourly.index.normalize()
+    
+    else:
+        # Fallback / Error if neither mode selected?
+        # Or keep Legacy as default if user didn't specify?
+        # User said "Forget about inline training completely" -> But let's keep a stub or warning
+        # For now, let's treat "no arg" as "Saved Model" or error? 
+        # Let's defaults to saved model if nothing passed, or error.
+        raise ValueError("Please specify --use-saved-model or --walk-forward")
 
     h = pd.read_csv(args.hourly_csv)
     if "Date" not in h.columns:
@@ -549,7 +778,7 @@ def main():
         raise ValueError("No hourly data in test window.")
 
     day_idx = h_test.index.normalize()
-    h_test["D1_State_lag1d"] = day_idx.map(lag_states.to_dict())
+    h_test["D1_State_lag1d"] = day_idx.map(states_for_hourly.to_dict())
     h_test = h_test.dropna(subset=["D1_State_lag1d"]).copy()
     date_col = h_test.index.tz_convert("UTC").tz_localize(None)
     h_test = h_test.reset_index(drop=True)

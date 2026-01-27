@@ -129,7 +129,105 @@ def fit_hmm(
         transmat_prior=tp,
     )
     model.fit(X, lengths=lengths)
+    # print(f"DEBUG: fit_hmm finished. Type={model.covariance_type}, Covars Shape={model.covars_.shape}")
     return model
+
+
+def fit_hmm_warm_start(
+    X: np.ndarray,
+    lengths: list[int],
+    prev_model: GaussianHMM,
+    k: int = 3,
+    seed: int = 42,
+) -> GaussianHMM:
+    """
+    Fit HMM initializing from a previous model (warm start).
+    Helps maintain state consistency.
+    """
+    sp, tp = compute_priors(k, self_bias=1.8)
+    
+    # Robustly infer covariance type from the actual shape
+    # This fixes mismatch where type="diag" but shape is (k, n, n)
+    if prev_model.covars_.ndim == 3:
+        cov_type = "full"
+    else:
+        cov_type = "diag"
+    
+    # Initialize with previous model's parameters
+    model = GaussianHMM(
+        n_components=k,
+        covariance_type=cov_type,
+        n_iter=500,
+        tol=1e-3,
+        random_state=seed,
+        min_covar=1e-5,
+        startprob_prior=sp,
+        transmat_prior=tp,
+        init_params="",  # Don't init fresh
+    )
+    # Initialize correct shape and n_features using internal _init
+    model._init(X, lengths=lengths)
+    
+    # Now overwrite with previous model's params
+    # Bypass validation by setting private attributes if needed,
+    # or ensure we set them in order.
+    # hmmlearn uses _covars_ internally
+    model.startprob_ = prev_model.startprob_.copy()
+    model.transmat_ = prev_model.transmat_.copy()
+    model.means_ = prev_model.means_.copy()
+    
+    # Bypass property setter validation which is flaky during init
+    model._covars_ = prev_model.covars_.copy()
+    
+    # Now fit properly on full data (it will use these as init due to init_params="")
+    model.fit(X, lengths=lengths)
+    return model
+
+
+def align_states(
+    model: GaussianHMM, 
+    X_sample: np.ndarray,
+    feature_idx_for_sort: int = 0
+) -> GaussianHMM:
+    """
+    Permute model states so that State 0 = Lowest Value ... State K-1 = Highest Value.
+    Usually sorts by 'Log_Returns' (index 0) to ensure:
+      0 = Bearish (Low Return)
+      1 = Neutral
+      2 = Bullish (High Return)
+      
+    Actually, conventionally we want:
+      0 = Bearish? Or just purely ordered by return?
+      
+    Let's enforce: Ordered by Mean of feature_idx_for_sort (Log Returns).
+    State 0 = Lowest Return (Bearish)
+    State K-1 = Highest Return (Bullish)
+    """
+    means = model.means_[:, feature_idx_for_sort]
+    order = np.argsort(means)  # e.g. [2, 0, 1] means state 2 is lowest, 0 is middle, 1 is highest
+    
+    if np.array_equal(order, np.arange(model.n_components)):
+        return model  # Already sorted
+        
+    # Create new model with permuted parameters
+    new_model = GaussianHMM(
+        n_components=model.n_components,
+        covariance_type=model.covariance_type,
+        n_iter=model.n_iter,
+        tol=model.tol,
+        random_state=model.random_state,
+        min_covar=model.min_covar,
+        startprob_prior=model.startprob_prior,
+        transmat_prior=model.transmat_prior,
+        init_params="",
+    )
+    
+    new_model.startprob_ = model.startprob_[order]
+    new_model.transmat_ = model.transmat_[order][:, order]
+    new_model.means_ = model.means_[order]
+    new_model.covars_ = model.covars_[order]
+    
+    return new_model
 
 
 def pick_best_model(
@@ -278,13 +376,10 @@ class BTCRegimeDetector:
     
     def predict(self, df: pd.DataFrame) -> pd.Series:
         """
-        Predict states for new data.
+        Predict states for new data using Viterbi (full sequence).
         
-        Args:
-            df: Daily DataFrame with required features
-        
-        Returns:
-            Series of state labels indexed by date
+        WARNING: This has subtle lookahead when used on test data.
+        For realistic backtests, use predict_online() instead.
         """
         if self.model is None:
             raise ValueError("Model not fitted. Call fit() first.")
@@ -299,6 +394,125 @@ class BTCRegimeDetector:
             states = enforce_min_dwell(states, gamma, min_run=self.min_dwell)
         
         return pd.Series(states, index=df.index, name=f"State_K{self.k}")
+    
+    def predict_online(self, df: pd.DataFrame, lookback: int = 60) -> pd.Series:
+        """
+        Predict states day-by-day without lookahead (realistic for live trading).
+        
+        For each day t, only data up to day t-1 is used for prediction.
+        This simulates what you'd actually know at market open on day t.
+        
+        Args:
+            df: Daily DataFrame with required features
+            lookback: Number of days to use for each prediction (rolling window)
+        
+        Returns:
+            Series of states indexed by date (state known at market open)
+        """
+        if self.model is None:
+            raise ValueError("Model not fitted. Call fit() first.")
+        
+        df = build_hmm_features(df)
+        X = df[HMM_FEATURES].values
+        Xs = self.scaler.transform(X)
+        
+        n = len(Xs)
+        states = np.zeros(n, dtype=int)
+        
+        for t in range(n):
+            # Use lookback window ending at YESTERDAY (t-1), not today
+            # At market open on day t, we only have data up to day t-1
+            start = max(0, t - lookback)
+            X_window = Xs[start:t]  # Excludes today's observation
+            
+            if len(X_window) == 0:
+                # First day: no prior data, use neutral state
+                states[t] = 0
+            else:
+                # Predict using only past data
+                window_states = self.model.predict(X_window)
+                states[t] = window_states[-1]  # Yesterday's state
+        
+        return pd.Series(states, index=df.index, name=f"State_K{self.k}_online")
+    
+    def save_model(self, out_dir: Path) -> None:
+        """
+        Save trained model artifacts for later use.
+        
+        Saves:
+            - model.pkl: Trained GaussianHMM
+            - scaler.pkl: StandardScaler
+            - config.json: Model configuration
+        """
+        import pickle
+        import json
+        
+        if self.model is None:
+            raise ValueError("Model not fitted. Call fit() first.")
+        
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save model
+        with open(out_dir / "model.pkl", "wb") as f:
+            pickle.dump(self.model, f)
+        
+        # Save scaler
+        with open(out_dir / "scaler.pkl", "wb") as f:
+            pickle.dump(self.scaler, f)
+        
+        # Save config
+        config = {
+            "train_end": self.train_end,
+            "val_end": self.val_end,
+            "k": self.k,
+            "min_dwell": self.min_dwell,
+            "features": HMM_FEATURES,
+            "state_labels": self.state_labels,
+        }
+        with open(out_dir / "config.json", "w") as f:
+            json.dump(config, f, indent=2)
+        
+        print(f"Saved model to: {out_dir}")
+    
+    @classmethod
+    def load_model(cls, model_dir: Path) -> "BTCRegimeDetector":
+        """
+        Load a previously saved model.
+        
+        Args:
+            model_dir: Directory containing model.pkl, scaler.pkl, config.json
+        
+        Returns:
+            BTCRegimeDetector ready for prediction
+        """
+        import pickle
+        import json
+        
+        model_dir = Path(model_dir)
+        
+        # Load config
+        with open(model_dir / "config.json", "r") as f:
+            config = json.load(f)
+        
+        # Create instance
+        detector = cls(
+            train_end=config["train_end"],
+            val_end=config["val_end"],
+            k=config["k"],
+            min_dwell=config["min_dwell"],
+        )
+        
+        # Load model
+        with open(model_dir / "model.pkl", "rb") as f:
+            detector.model = pickle.load(f)
+        
+        # Load scaler
+        with open(model_dir / "scaler.pkl", "rb") as f:
+            detector.scaler = pickle.load(f)
+        
+        print(f"Loaded model from: {model_dir}")
+        return detector
     
     def fit_predict(self, df: pd.DataFrame) -> pd.DataFrame:
         """Fit model and return DataFrame with states added."""

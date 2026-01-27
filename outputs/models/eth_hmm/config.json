@@ -1,0 +1,23 @@
+{
+  "train_end": "2020-12-31",
+  "val_end": "2022-12-31",
+  "k": 3,
+  "min_dwell": 2,
+  "features": [
+    "CumRet_30d",
+    "CumRet_20d",
+    "CumRet_10d",
+    "TrendScore",
+    "MomentumZ",
+    "Log_Returns",
+    "BodyPct",
+    "GKVol_20",
+    "VolZ_20",
+    "ClosePosInRange"
+  ],
+  "state_labels": {
+    "0": "Sideways",
+    "1": "Bullish",
+    "2": "Bearish"
+  }
+}

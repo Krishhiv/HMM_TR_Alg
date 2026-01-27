@@ -1,0 +1,13 @@
+Holdout summary with ECT (Train+Val fit, Test only)
+Train end: 2019-12-31
+Val end:   2021-12-31
+Trades: 124
+Final Equity: 1.4505
+CAGR: 11.11%
+Max Drawdown: -14.18%
+Sharpe: 0.72
+Sortino: 0.69
+Calmar: 0.78
+Profit Factor: 1.55
+Win Rate: 31.45%
+Annual Volatility: 16.37%
