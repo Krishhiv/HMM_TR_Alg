@@ -422,11 +422,14 @@ def simulate_tr3(df: pd.DataFrame):
             "exit_time": exit_time, "exit_price": exit_price,
             "gross_ret": gross_ret, "net_ret": net_ret,
             "holding_hours": (exit_time - entry_time) / pd.Timedelta(hours=1),
-            "regime": 1, "strategy": "TR3", "exit_reason": "eod_close",
+            "regime": entry_reg if entry_reg else 1, "strategy": "TR3", "exit_reason": "eod_close",
         })
 
     trade_log = pd.DataFrame(trades, columns=cols)
-    strat_rets = pd.Series(pos, index=df.index) * df["ret_oo"]
+    # Shift pos by 1 to align with returns (pos[i]=1 means we hold from i to i+1, so we want ret_oo[i+1])
+    # pos array recorded "in_pos" status at step i.
+    # If we entered at i, in_pos=True. We want return for i+1.
+    strat_rets = pd.Series(pos, index=df.index).shift(1).fillna(0.0) * df["ret_oo"]
     return trade_log, strat_rets
 
 

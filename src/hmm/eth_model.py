@@ -35,22 +35,11 @@ DEFAULT_CONFIG = {
 }
 
 # Features for ETH HMM - DIRECTIONAL features FIRST (priority order matters)
+# Features for ETH HMM - OPTIMIZED (Set 7 from optimization)
 HMM_FEATURES = [
-    # DIRECTIONAL features first (highest priority)
-    "CumRet_30d",        # 30-day cumulative return - strongest trend signal
-    "CumRet_20d",        # 20-day cumulative return
-    "CumRet_10d",        # 10-day cumulative return
-    "TrendScore",        # Price vs moving averages (bullish/bearish bias)
-    "MomentumZ",         # Recent momentum z-scored
-    
-    # Secondary directional
-    "Log_Returns",       # Daily direction
-    "BodyPct",           # Candle body
-    
-    # Volatility/structure (de-emphasized, at END)
-    "GKVol_20",          # Now at END - less weight in clustering
-    "VolZ_20",           # Volume z-score
-    "ClosePosInRange",   # Close position within range
+    "CumRet_10d",        # Short-term momentum
+    "CumRet_30d",        # Medium-term momentum (Key signal)
+    "TrendScore",        # Distance from Moving Averages
 ]
 
 # State labels for ETH
@@ -166,6 +155,66 @@ def fit_hmm(
         startprob_prior=sp,
         transmat_prior=tp,
     )
+    model.fit(X, lengths=lengths)
+    print(f"DEBUG fit_hmm ETH: Type={model.covariance_type}, Shape={model.covars_.shape}")
+    
+    # Auto-correct type if mismatch (hmmlearn quirk?)
+    if model.covariance_type == "diag" and model.covars_.ndim == 3:
+        # print("WARNING: ETH Model produced full covars but type is diag. Switching to full.")
+        model.covariance_type = "full"
+        
+    # Safety Check: If full, ensure 3D storage
+    if model.covariance_type == "full" and model.covars_.ndim == 2:
+        print("DEBUG ETH: Inflating 2D to 3D")
+        model._covars_ = np.array([np.diag(c) for c in model.covars_])
+        
+    return model
+
+
+def fit_hmm_warm_start(
+    X: np.ndarray,
+    lengths: list[int],
+    prev_model: GaussianHMM,
+    k: int = 3,
+    seed: int = 42,
+) -> GaussianHMM:
+    """
+    Fit HMM initializing from a previous model (warm start).
+    Helps maintain state consistency.
+    """
+    # Use ETH priors
+    sp, tp = compute_priors(k)
+    
+    # Robustly infer covariance type from the actual shape
+    if prev_model.covars_.ndim == 3:
+        cov_type = "full"
+    else:
+        cov_type = "diag"
+    
+    # Initialize with previous model's parameters
+    model = GaussianHMM(
+        n_components=k,
+        covariance_type=cov_type,
+        n_iter=500,
+        tol=1e-3,
+        random_state=seed,
+        min_covar=1e-5,
+        startprob_prior=sp,
+        transmat_prior=tp,
+        init_params="",  # Don't init fresh
+    )
+    # Initialize correct shape and n_features using internal _init
+    model._init(X, lengths=lengths)
+    
+    # Now overwrite with previous model's params
+    model.startprob_ = prev_model.startprob_.copy()
+    model.transmat_ = prev_model.transmat_.copy()
+    model.means_ = prev_model.means_.copy()
+    
+    # Bypass property setter validation which is flaky during init
+    model._covars_ = prev_model.covars_.copy()
+    
+    # Now fit properly on full data
     model.fit(X, lengths=lengths)
     return model
 

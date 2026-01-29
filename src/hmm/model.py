@@ -129,7 +129,13 @@ def fit_hmm(
         transmat_prior=tp,
     )
     model.fit(X, lengths=lengths)
-    # print(f"DEBUG: fit_hmm finished. Type={model.covariance_type}, Covars Shape={model.covars_.shape}")
+    print(f"DEBUG fit_hmm: Type={model.covariance_type}, Shape={model.covars_.shape}")
+    
+    # Auto-correct type if mismatch (hmmlearn quirk?)
+    if model.covariance_type == "diag" and model.covars_.ndim == 3:
+        print("WARNING: Model produced full covars but type is diag. Switching to full.")
+        model.covariance_type = "full"
+        
     return model
 
 
@@ -222,10 +228,26 @@ def align_states(
         init_params="",
     )
     
+    # Initialize dimensions (n_features)
+    # n_components is already set, but we need n_features from X_sample
+    new_model._init(X_sample)
+    print(f"DEBUG align_states: NewModel Init Shape={new_model._covars_.shape}")
+    
+    print(f"DEBUG align_states: Source Covars Shape={model.covars_.shape}")
+    
     new_model.startprob_ = model.startprob_[order]
     new_model.transmat_ = model.transmat_[order][:, order]
     new_model.means_ = model.means_[order]
-    new_model.covars_ = model.covars_[order]
+    raw_covars = model.covars_[order]
+    
+    # If type is full but covars are 2D (diag), inflate to 3D
+    if new_model.covariance_type == "full" and raw_covars.ndim == 2:
+        print("DEBUG align_states: Inflating 2D covars to 3D (Full)")
+        raw_covars = np.array([np.diag(c) for c in raw_covars])
+        
+    new_model._covars_ = raw_covars
+    
+    print(f"DEBUG align_states: InType={model.covariance_type}, OutType={new_model.covariance_type}, OutShape={new_model._covars_.shape}")
     
     return new_model
 
