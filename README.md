@@ -1,151 +1,148 @@
-# HMM_Det: Regime-Filtered Crypto Trading System
+# HMM-TR³ — Regime-Filtered Crypto Momentum Portfolio
 
-A quantitative trading system that uses **Hidden Markov Models (HMM)** to detect market regimes and applies the **TR³ (Thrust–Retention–Ride)** strategy during favorable conditions.
+A quantitative trading system that combines **Hidden Markov Model regime detection** with a **momentum breakout strategy (TR³)**, layered risk overlays, and **multi-asset diversification** across BTC and ETH.
 
-## Overview
+Everything is **walk-forward and causal** — the model is retrained on a rolling window and never sees future data. All results below are out-of-sample from 2022-01 onward.
+
+---
+
+## Headline Results (2022-01 → 2025-09, out-of-sample)
+
+| Metric | BTC sleeve | ETH sleeve | **Portfolio (50/50)** |
+|---|---|---|---|
+| CAGR | 21.4% | 29.9% | **26.3%** |
+| Sharpe | 1.22 | 1.40 | **1.68** |
+| Sortino | 1.47 | 1.58 | **2.58** |
+| Max Drawdown | -9.8% | -9.6% | **-7.2%** |
+| Annual Vol | 17.0% | 20.0% | **14.5%** |
+
+The portfolio beats **both** of its sleeves on Sharpe *and* drawdown — the diversification benefit of two momentum sleeves whose **strategy returns correlate just 0.23** (vs 0.83 for the underlying assets), because they trend on different clocks.
+
+**vs the original single-asset BTC baseline:** Sharpe 1.15 → **1.68** (+46%), Max DD -12.6% → **-7.2%** (43% shallower), CAGR 23.8% → **26.3%**.
+
+---
+
+## How It Works
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        DATA PIPELINE                             │
-│  Coinbase API → Raw OHLCV → Feature Engineering → HMM States    │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    REGIME DETECTION (HMM)                        │
-│  3-State Gaussian HMM on BTC Daily Data:                        │
-│    • State 0: Mean Reversion                                    │
-│    • State 1: Trending (Longs Only) ✅ Trade here              │
-│    • State 2: Bearish (Sit Out)                                 │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │ Lagged State (1D)
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    TR³ STRATEGY (1H)                             │
-│  Entry: Donchian breakout OR ATR thrust + regime filter         │
-│  Exits: FTH → Breakeven → Trail → EMA break → Time stop         │
-└─────────────────────────────────────────────────────────────────┘
+   Daily OHLCV                         Hourly OHLCV
+        │                                    │
+        ▼                                    ▼
+┌───────────────────┐              ┌──────────────────────┐
+│  3-State Gaussian │  regime      │   TR³ momentum entry │
+│  HMM (walk-fwd)   │─────────────▶│   (Donchian / thrust │
+│  state 1 = trade  │  (lagged)    │    breakout + filters│
+└───────────────────┘              └──────────┬───────────┘
+                                              │ per-trade returns
+                                              ▼
+                              ┌──────────────────────────────┐
+                              │  Risk overlays (all causal):  │
+                              │   • ECT  equity-curve throttle│
+                              │   • Vol-target position sizing│
+                              │   • min-dwell regime smoothing│
+                              └──────────────┬───────────────┘
+                                              │
+                     ┌────────────────────────┴───────────────────────┐
+                     ▼                                                 ▼
+              BTC sleeve                                         ETH sleeve
+                     └───────────────── 50 / 50 blend ──────────────────┘
+                                              │
+                                              ▼
+                                     Diversified portfolio
 ```
+
+### 1. Regime detection — daily Gaussian HMM
+A 3-state HMM classifies each day using 7 volatility/trend features. States are labeled by mean return (0 = bearish, 2 = euphoric); TR³ is only permitted to trade **state 1** — the sustainable "grind-up" regime, which shows the cleanest forward returns. The state for day *T* is decoded from data up to *T-1* (no lookahead) and retrained every 30 days on a trailing 730-day window.
+
+### 2. Entry — TR³ (Thrust · Retention · Ride)
+Hourly long entries fire on a **Donchian-20 breakout or ATR thrust**, gated by trend structure (EMA50 > EMA200, price > EMA50), close-location, ADX and R². The profile is low win-rate / high payoff — many small losses funded by a few large winners.
+
+### 3. Risk overlays (all causal, no lookahead)
+- **ECT** — throttles position size when the strategy's own equity falls below its 40-trade SMA.
+- **Vol-target** — scales size down when the asset's realized vol is elevated (`min(target/realized_vol, 1.0)`, de-risk only). BTC target 0.40, ETH 0.50.
+- **min-dwell smoothing** (ETH) — delays regime switches until a new state persists 2 days, cutting HMM churn 68% and halving the drawdown.
+
+### 4. Portfolio
+Per-sleeve vol-targeted returns are combined 50/50. Low strategy correlation lifts portfolio Sharpe above either sleeve and cuts the drawdown below both.
+
+---
+
+## Robustness
+
+Validated with [`scripts/overfitting_test.py`](scripts/overfitting_test.py):
+
+- **Parameter sensitivity** — across **80 overlay configs** (vol-targets × weight), Sharpe stays in **1.51–1.71** and **100%** clear Sharpe 1.5 / CAGR 20%. The result is a broad plateau, not a knife-edge peak.
+- **Monte-Carlo block bootstrap** (5,000 resamples) — Sharpe 5th percentile **0.96**, median 1.70; P(Sharpe > 1.0) = 94%.
+- **Sub-period stability** — both halves profitable (Sharpe 1.20 and 2.06).
+
+The HMM + TR³ engine is genuinely walk-forward OOS. Known limitations: short single-cycle sample (~3.7 yrs), and both sleeves share crypto beta — diversification is *within* crypto, not market-neutral.
+
+---
 
 ## Project Structure
 
 ```
-HMM_Det/
-├── config.py                 # Centralized configuration
-├── README.md                 # This file
-│
-├── src/                      # Source code
-│   ├── data/                 # Data collection
-│   │   └── coinbase_downloader.py
-│   ├── features/             # Feature engineering
-│   │   ├── daily_features.py
-│   │   └── hourly_features.py
-│   ├── hmm/                  # HMM regime detection
-│   │   └── model.py
-│   ├── strategy/             # Trading strategy
-│   │   └── tr3_engine.py
-│   ├── backtest/             # Backtesting
-│   │   └── metrics.py
-│   └── utils/                # Utilities
-│
-├── scripts/                  # Runnable entry points
-│   ├── run_holdout.py        # Out-of-sample backtest
-│   ├── run_optimization.py   # Parameter grid search
-│   └── run_daily_update.py   # Daily pipeline
-│
+HMM_TR_Alg/
+├── src/
+│   ├── data/            # Coinbase downloader
+│   ├── features/        # daily_features.py, hourly_features.py
+│   ├── hmm/             # model.py  (unified, asset-agnostic HMM)
+│   ├── strategy/        # tr3_engine.py
+│   └── backtest/        # metrics.py
+├── scripts/
+│   ├── run_holdout_ect.py     # TR³ + ECT core (shared engine)
+│   ├── run_btc_strategy.py    # walk-forward runner (any asset)
+│   ├── run_portfolio.py       # single-asset runner + vol-target
+│   ├── run_portfolio_multi.py # BTC+ETH combined portfolio
+│   └── overfitting_test.py    # robustness suite
 ├── data/
-│   ├── raw/                  # Downloaded OHLCV
-│   ├── processed/            # Feature-engineered datasets
-│   └── cache/                # Monthly download cache
-│
-└── outputs/
-    ├── models/               # Saved HMM models
-    ├── logs/                 # Trade logs
-    ├── plots/                # Visualizations
-    └── reports/              # Summary reports
+│   ├── raw/             # BTC/ETH 1h + 1d OHLCV
+│   └── processed/       # engineered feature files
+├── outputs/             # equity curves, charts, metrics, reports
+├── requirements.txt
+└── README.md
 ```
 
-## Quick Start
+---
 
-### 1. Install Dependencies
+## Usage
 
 ```bash
-python -m venv venv
-source venv/bin/activate
+# Install
 pip install -r requirements.txt
+
+# Single-asset BTC (vol-targeted)
+python scripts/run_portfolio.py --vol-target 0.40 --vol-max-scale 1.0 \
+    --out-dir outputs/portfolio_voltarget40
+
+# Single-asset ETH (same engine, just different data)
+python scripts/run_portfolio.py \
+    --daily data/processed/eth_1d_features.csv \
+    --hourly data/processed/eth_1h_features_tr.csv \
+    --out-dir outputs/portfolio_eth
+
+# Combined BTC + ETH portfolio (the headline result)
+python scripts/run_portfolio_multi.py
+
+# Robustness / overfitting suite
+python scripts/overfitting_test.py
 ```
 
-### 2. Download Data
+### Adding a new asset
+The HMM is **fit**, not hand-tuned — the same unified spec applies to any asset. To add one:
+1. Drop an hourly OHLCV CSV in `data/raw/` (daily is resampled from it).
+2. Generate features with `src/features/daily_features.py` and `src/features/hourly_features.py`.
+3. Run it through `run_portfolio.py` — no per-asset model tuning.
 
-```bash
-python -m src.data.coinbase_downloader
-```
+---
 
-### 3. Generate Features
+## Key Design Principles
 
-```bash
-python -m src.features.daily_features
-python -m src.features.hourly_features
-```
+- **No lookahead** — every signal for time *T* uses only data available before *T*; the HMM is retrained walk-forward.
+- **Unified spec** — one model configuration across all assets; cross-asset generalization is the built-in overfitting check.
+- **De-risk, don't lever** — overlays only ever *reduce* exposure (max scale 1.0), so they can't manufacture surprise losses.
+- **Diversify an edge that exists** — the momentum edge is validated per-asset first; the portfolio just harvests its low cross-asset correlation.
 
-### 4. Train HMM & Run Backtest
+---
 
-```bash
-python scripts/run_holdout.py
-```
-
-## Key Components
-
-### HMM Regime Detection
-
-Uses a 3-state Gaussian HMM trained on daily BTC features:
-- **Log returns** (direction)
-- **Garman-Klass volatility** (OHLC-based vol)
-- **Volume z-score** (volume pressure)
-- **EMA slope** (trend direction)
-- **Candle body %** (momentum)
-
-Minimum dwell smoothing prevents unrealistic rapid state switches.
-
-### TR³ Strategy
-
-**Entry conditions** (all must be true):
-- HMM State = 1 (Trending)
-- Price > EMA50 > EMA200
-- Donchian breakout OR ATR thrust move
-- CLV ≥ 0.55, ADX ≥ 14, R² ≥ 0.10
-
-**Exit tiers**:
-1. **Fail-to-hold**: Quick exit if price fails (disabled after +0.5 ATR)
-2. **Breakeven**: Protect capital (active 0.75-1.0 ATR advance)
-3. **Ratcheting trail**: 2.5 → 3.5 → 4.5 ATR as profit grows
-4. **EMA50 break**: Relaxed when in profit
-5. **No-progress**: Exit if stalling
-6. **Time stop**: 7 days max hold
-
-## Configuration
-
-All parameters centralized in `config.py`:
-
-```python
-from config import tr3_config, hmm_config
-
-# Modify TR³ parameters
-tr3_config.adx_min = 18
-tr3_config.clv_min = 0.60
-
-# Modify HMM settings
-hmm_config.train_end = "2020-12-31"
-```
-
-## Train/Val/Test Splits
-
-| Split | Period | Purpose |
-|-------|--------|---------|
-| Train | → 2019-12-31 | Fit HMM and scaler |
-| Validation | 2020-01-01 → 2021-12-31 | Model selection |
-| Test | 2022-01-01 → | Out-of-sample evaluation |
-
-## License
-
-MIT
+*Research/education only. Not investment advice. Past performance does not guarantee future results.*

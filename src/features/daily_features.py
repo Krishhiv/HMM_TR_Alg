@@ -66,13 +66,37 @@ def compute_daily_features(df: pd.DataFrame, n: int = 20) -> pd.DataFrame:
     df[f"VolZ_{n}"] = (df["Volume"] - vol_mean) / vol_std
     
     # ===== Trend Features =====
-    
+
     # Exponential moving average
     df[f"EMA_{n}"] = df["Close"].ewm(span=n, adjust=False).mean()
-    
+
     # EMA slope
     df[f"EMA_{n}_slope"] = df[f"EMA_{n}"].diff()
-    
+
+    # Linear-regression R² on log(Close) over 14 days.
+    # R² ≈ 1  → prices trace a clean linear path (trending regime)
+    # R² ≈ 0  → prices are choppy/mean-reverting
+    # This is the key feature that separates "trending bull" from "choppy bull".
+    _r2_window = 14
+    _log_close = np.log(df["Close"])
+    _x = np.arange(_r2_window, dtype=float)
+    _x -= _x.mean()          # centre for numerical stability
+    _ss_x = (_x * _x).sum()
+
+    def _r2(y: np.ndarray) -> float:
+        y_c = y - y.mean()
+        ss_tot = (y_c * y_c).sum()
+        if ss_tot < 1e-15:
+            return 1.0
+        beta = (_x * y_c).sum() / _ss_x
+        ss_res = ((y_c - beta * _x) * (y_c - beta * _x)).sum()
+        return max(0.0, 1.0 - ss_res / ss_tot)
+
+    df[f"LinReg_R2_{_r2_window}"] = (
+        _log_close.rolling(window=_r2_window, min_periods=_r2_window)
+        .apply(_r2, raw=True)
+    )
+
     return df
 
 

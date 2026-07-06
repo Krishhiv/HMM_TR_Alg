@@ -74,6 +74,7 @@ FEATURES = [
     "BodyPct",
     "ClosePosInRange",
     "CloseOverEMA20",
+    "LinReg_R2_14",
 ]
 
 

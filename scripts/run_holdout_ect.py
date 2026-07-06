@@ -676,14 +676,14 @@ def main():
             # Fit HMM
             if prev_model is None:
                 # First run: Fit from scratch
-                model = fit_hmm(Xs_win, len_win, k=3, seed=101)
+                model = fit_hmm(Xs_win, len_win, k=4, seed=101)
                 # Align states: Sort by Log_Returns so State 2 is Bullish (Highest Return)
                 model = align_states(model, Xs_win, feature_idx_for_sort=0)
             else:
                 # Retrain: Warm start from previous model + Align
                 # Note: warm start implicitly tries to keep alignment, but we force alignment again
                 # to be safe against label switching during EM
-                model = fit_hmm_warm_start(Xs_win, len_win, prev_model=prev_model, k=3, seed=101)
+                model = fit_hmm_warm_start(Xs_win, len_win, prev_model=prev_model, k=4, seed=101)
                 model = align_states(model, Xs_win, feature_idx_for_sort=0)
             
             prev_model = model

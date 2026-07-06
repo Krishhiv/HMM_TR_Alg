@@ -176,6 +176,8 @@ def main():
                         help="Fractional BTC short in bearish regime (0 = long-only)")
     parser.add_argument("--vol-target",  type=float, default=0.0,
                         help="Annual vol target for position scaling (0 = disabled)")
+    parser.add_argument("--vol-max-scale", type=float, default=1.0,
+                        help="Cap on vol-target position scaling (1.0 = de-risk only, never lever up)")
     parser.add_argument(
         "--daily",
         default=str(PROJECT_ROOT / "data/processed/btc_1d_features.csv"),
@@ -242,7 +244,7 @@ def main():
         print(f"\nApplying vol targeting (target={args.vol_target:.0%}, lookback=20d)…")
         daily_rets_long, vol_scale = apply_vol_targeting(
             daily_rets_long, btc_d,
-            target_vol=args.vol_target, lookback=20, max_scale=1.5,
+            target_vol=args.vol_target, lookback=20, max_scale=args.vol_max_scale,
         )
         print(f"  Scale range: {vol_scale.min():.2f}× – {vol_scale.max():.2f}×  "
               f"mean {vol_scale.mean():.2f}×")

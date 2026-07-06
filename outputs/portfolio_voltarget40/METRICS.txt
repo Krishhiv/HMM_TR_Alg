@@ -1,0 +1,93 @@
+================================================================================
+  BTC HMM-TR3 STRATEGY  —  VOL-TARGET 0.40 CONFIGURATION
+  Performance Report
+================================================================================
+
+  Backtest period : 2021-12-31  ->  2025-09-05   (3.68 years, walk-forward)
+  Instrument      : BTC-USD
+  Trading TF      : 1H   |   Regime HMM TF : 1D
+  Risk overlays   : ECT (equity-curve throttle) + Vol-Target 0.40 (de-risk only)
+
+--------------------------------------------------------------------------------
+  HEADLINE METRICS
+--------------------------------------------------------------------------------
+  Total Return .............   103.81%      (2.04x starting capital)
+  CAGR .....................    21.35%
+  Sharpe Ratio .............     1.220
+  Sortino Ratio ............     1.469
+  Calmar Ratio .............     2.172
+  Max Drawdown .............    -9.83%
+  Annualized Volatility ....    16.98%
+
+--------------------------------------------------------------------------------
+  TRADE STATISTICS
+--------------------------------------------------------------------------------
+  Total Trades .............   204
+  Win Rate .................    25.0%
+  Profit Factor ............     1.96
+  Expectancy / trade .......    +0.383%
+  Average Win ..............    +3.128%
+  Average Loss .............    -0.531%
+  Win/Loss Ratio ...........     5.89   (avg win / avg loss)
+  Best Trade ...............   +15.97%
+  Worst Trade ..............    -2.50%
+  Avg Holding Time .........    17.8 hours
+
+  Profile: low win-rate, high payoff-ratio trend-follower. Many small
+  losses funded by a few large winners (asymmetry 5.9:1). Profit factor
+  ~2.0 means ~$2 gained per $1 lost.
+
+--------------------------------------------------------------------------------
+  PER-YEAR BREAKDOWN
+--------------------------------------------------------------------------------
+  Year     Return     Sharpe    Max DD    Trades
+  ----     ------     ------    ------    ------
+  2022     +0.34%      0.08     -4.87%      21
+  2023    +63.30%      2.27     -5.83%      43
+  2024    +24.50%      1.26     -8.23%      69
+  2025     -0.09%      0.05     -9.83%      71     (partial, to Sep 5)
+
+  2023 (clean bull)  = primary return engine.
+  2024 (bull)        = solid contribution.
+  2022 (bear)        = capital preserved (flat), stayed mostly out of market.
+  2025 (choppy)      = flat; vol-targeting neutralized the whipsaw bleed.
+
+--------------------------------------------------------------------------------
+  EXIT-REASON DISTRIBUTION
+--------------------------------------------------------------------------------
+  ema50_relaxed ....  51    (trend-break exit, relaxed band)
+  fth_clv ..........  48    (failed-thrust / close-location-value stop)
+  trail_atr ........  44    (ATR trailing stop)
+  fth_level ........  35    (failed-thrust level stop)
+  breakeven ........  16    (breakeven stop after profit lock)
+  ema50_break ......  10    (hard trend-break exit)
+
+--------------------------------------------------------------------------------
+  COMPARISON vs BASELINE (no vol-target)
+--------------------------------------------------------------------------------
+                        Baseline        Vol-Target 0.40
+  Total Return .......  119.33%   ->     103.81%
+  CAGR ...............   23.79%   ->      21.35%
+  Sharpe .............    1.150   ->       1.220     (+0.07)
+  Max Drawdown .......  -12.62%   ->      -9.83%     (-22% shallower)
+  Annualized Vol .....   20.26%   ->      16.98%
+
+  Trade-off: give up ~15.5 pts of total return to cut the worst drawdown
+  by ~22% and lift risk-adjusted return (Sharpe & Sortino).
+
+--------------------------------------------------------------------------------
+  METHODOLOGY NOTES
+--------------------------------------------------------------------------------
+  * Walk-forward: HMM retrained every 30 days on a trailing 730-day window.
+    No parameters fit on the test period; fully out-of-sample from 2022-01.
+  * Causal regime signal: state for day T decoded only from data <= T-1.
+  * Vol-target: daily position scaled by min(0.40 / BTC_realized_vol, 1.0),
+    realized vol = 20-day close-to-close, annualized, lagged 1 day.
+    Scale range observed: 0.39x - 1.00x (mean 0.82x). Never levers above 1.0x.
+  * Sharpe/Sortino annualized with sqrt(365) on daily returns.
+  * Returns are net of the strategy's per-bar cost model; no funding/borrow.
+
+  Reproduce:
+    python scripts/run_portfolio.py --vol-target 0.40 --vol-max-scale 1.0 \
+        --out-dir outputs/portfolio_voltarget40
+================================================================================

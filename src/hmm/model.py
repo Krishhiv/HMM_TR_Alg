@@ -151,46 +151,49 @@ def fit_hmm_warm_start(
 ) -> GaussianHMM:
     """
     Fit HMM initializing from a previous model (warm start).
-    Helps maintain state consistency.
+    Falls back to a fresh multi-seed fit if warm-start diverges.
     """
+    import warnings
+
     sp, tp = compute_priors(k, self_bias=1.8)
-    
+
     # Robustly infer covariance type from the actual shape
-    # This fixes mismatch where type="diag" but shape is (k, n, n)
     if prev_model.covars_.ndim == 3:
         cov_type = "full"
     else:
         cov_type = "diag"
-    
-    # Initialize with previous model's parameters
-    model = GaussianHMM(
-        n_components=k,
-        covariance_type=cov_type,
-        n_iter=500,
-        tol=1e-3,
-        random_state=seed,
-        min_covar=1e-5,
-        startprob_prior=sp,
-        transmat_prior=tp,
-        init_params="",  # Don't init fresh
-    )
-    # Initialize correct shape and n_features using internal _init
-    model._init(X, lengths=lengths)
-    
-    # Now overwrite with previous model's params
-    # Bypass validation by setting private attributes if needed,
-    # or ensure we set them in order.
-    # hmmlearn uses _covars_ internally
-    model.startprob_ = prev_model.startprob_.copy()
-    model.transmat_ = prev_model.transmat_.copy()
-    model.means_ = prev_model.means_.copy()
-    
-    # Bypass property setter validation which is flaky during init
-    model._covars_ = prev_model.covars_.copy()
-    
-    # Now fit properly on full data (it will use these as init due to init_params="")
-    model.fit(X, lengths=lengths)
-    return model
+
+    try:
+        model = GaussianHMM(
+            n_components=k,
+            covariance_type=cov_type,
+            n_iter=500,
+            tol=1e-3,
+            random_state=seed,
+            min_covar=1e-5,
+            startprob_prior=sp,
+            transmat_prior=tp,
+            init_params="",
+        )
+        model._init(X, lengths=lengths)
+        model.startprob_ = prev_model.startprob_.copy()
+        model.transmat_ = prev_model.transmat_.copy()
+        model.means_ = prev_model.means_.copy()
+        model._covars_ = prev_model.covars_.copy()
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            model.fit(X, lengths=lengths)
+
+        # Reject if parameters degenerated
+        if not (np.isfinite(model.means_).all() and np.isfinite(model.covars_).all()):
+            raise ValueError("Warm-start produced NaN/Inf parameters")
+
+        return model
+
+    except Exception:
+        # Fall back: fresh multi-seed fit, pick best log-likelihood
+        return pick_best_model(X, lengths, k=k, restarts=10, base_seed=seed)
 
 
 def align_states(

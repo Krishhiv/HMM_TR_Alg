@@ -28,7 +28,8 @@ from scripts.run_holdout_ect import (
     simulate_tr3,
     apply_ect,
     metrics_from_trades,
-    lengths_by_year
+    lengths_by_year,
+    enforce_min_dwell_causal,
 )
 
 def run_btc_walkforward(
@@ -182,11 +183,12 @@ def run_btc_walkforward(
     # 4. Map to Hourly & Simulate
     states_series = pd.Series(states_online_list, index=dates_online_list)
     
-    # Min Dwell
-    if min_dwell > 1:
-        # Simple causal min dwell
-        # (Copy logic if needed, or skip for simplicity as BTC min_dwell=1 usually)
-        pass
+    # Min Dwell — causal smoothing to reduce regime churn (no lookahead).
+    # Delays a regime switch until the new state persists for min_dwell days,
+    # filtering out jumpy false-positive flips (e.g. ETH bear-rally whipsaws).
+    if min_dwell > 1 and len(states_series) > 0:
+        smoothed = enforce_min_dwell_causal(states_series.values, min_run=min_dwell)
+        states_series = pd.Series(smoothed, index=states_series.index)
         
     # Map to Hourly
     # Filter hourly df to test period
