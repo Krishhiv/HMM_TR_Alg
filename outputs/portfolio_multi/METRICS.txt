@@ -1,0 +1,104 @@
+================================================================================
+  HMM-TR3 MULTI-ASSET MOMENTUM PORTFOLIO  -  BTC + ETH
+  Performance Report
+================================================================================
+
+  Backtest period : 2021-12-31  ->  2026-07-06   (4.52 years, walk-forward)
+  Instruments     : BTC-USD, ETH-USD   (50 / 50 capital weight)
+  Trading TF      : 1H   |   Regime HMM TF : 1D
+  Overlays        : ECT + Vol-Target (BTC 0.40, ETH 0.50) + min-dwell (ETH=2)
+  Basis           : fully out-of-sample; all signals causal (no lookahead)
+  Data as of      : latest available (BTC/ETH through 2026-07)
+
+--------------------------------------------------------------------------------
+  HEADLINE METRICS  -  COMBINED PORTFOLIO
+--------------------------------------------------------------------------------
+  Total Return .............   140.83%     (2.41x starting capital)
+  CAGR .....................    21.51%
+  Sharpe Ratio .............     1.461
+  Sortino Ratio ............     1.893
+  Calmar Ratio .............     2.523
+  Max Drawdown .............    -8.52%
+  Annualized Volatility ....    13.96%
+
+--------------------------------------------------------------------------------
+  SLEEVE vs PORTFOLIO
+--------------------------------------------------------------------------------
+                          BTC        ETH      PORTFOLIO
+  Total Return .......  126.77%    143.55%     140.83%
+  CAGR ...............   19.90%     21.81%      21.51%
+  Sharpe .............    1.182      1.134       1.461   <- beats both sleeves
+  Sortino ............    1.304      1.125       1.893
+  Calmar .............    2.024      1.685       2.523
+  Max Drawdown .......   -9.83%    -12.94%      -8.52%   <- shallower than both
+  Annual Vol .........   16.44%     18.84%      13.96%   <- lower than both
+
+  The portfolio dominates BOTH sleeves on Sharpe AND drawdown -- the diversi-
+  fication benefit of combining two imperfectly-correlated momentum sleeves.
+
+--------------------------------------------------------------------------------
+  DIVERSIFICATION -- THE ENGINE OF THE IMPROVEMENT
+--------------------------------------------------------------------------------
+  Realized STRATEGY-return correlation ....  0.25   (all overlapping days)
+  Correlation on days both in-market ......  0.44   (n = 85 days)
+  Raw ASSET (BTC/ETH price) correlation ...  0.83
+
+  Strategy returns correlate far below the underlying assets because the two
+  sleeves trend on different clocks and are rarely both in-market at once.
+  That low 0.25 is what lifts portfolio Sharpe above either sleeve.
+
+--------------------------------------------------------------------------------
+  PER-YEAR BREAKDOWN  (sleeve returns + combined)
+--------------------------------------------------------------------------------
+  Year        BTC        ETH     PORTFOLIO
+  ----        ---        ---     ---------
+  2022       +0.3%      -5.8%      -2.7%
+  2023      +63.3%     +19.2%     +40.3%     (BTC carries)
+  2024      +24.5%     +24.5%     +25.3%
+  2025       +6.7%     +90.7%     +44.1%     (ETH carries)
+  2026       +4.2%      -8.7%      -2.3%     (partial, to Jul 6; ETH drags)
+
+  The sleeves take turns leading -- BTC drives 2023, ETH drives 2025 -- so the
+  portfolio has only two mildly negative years (2022, 2026 YTD). That handoff
+  is what produces the -8.5% max drawdown.
+
+--------------------------------------------------------------------------------
+  ROBUSTNESS  (scripts/overfitting_test.py, on data through 2026-07)
+--------------------------------------------------------------------------------
+  [1] Parameter sensitivity -- 80 overlay configs (vol-targets x weight):
+        Sharpe range 1.29 - 1.49 (median 1.43)
+        72% of configs clear Sharpe 1.40;  86% clear CAGR 20%
+        -> broad plateau, not a knife-edge peak (overlays not overfit)
+
+  [2] Monte-Carlo block bootstrap -- 5000 resamples, 20-day blocks:
+        Sharpe  5th pct 0.79  |  median 1.47  |  95th pct 2.07
+        P(Sharpe > 1.0) = 88%  |  P(Sharpe > 0) = 100%
+
+  [3] Sub-period stability -- independent halves (now well-balanced):
+        first half  (2022 -> Apr 2024): CAGR 21.6%, Sharpe 1.55, DD -5.1%
+        second half (Apr 2024 -> 2026):  CAGR 21.4%, Sharpe 1.39, DD -8.5%
+        -> both halves profitable and symmetric; not carried by one stretch
+
+--------------------------------------------------------------------------------
+  NOTE ON THE DATA REFRESH (vs prior 2025-09 cut)
+--------------------------------------------------------------------------------
+  Extending the sample by ~10 months brought the headline down (Sharpe 1.68 ->
+  1.461, CAGR 26.3% -> 21.5%): the earlier figures were partly flattered by
+  ETH's 2025 spike, and 2026 YTD has been mildly negative (-2.3%). The core
+  thesis held: the portfolio still beats both sleeves, correlation stayed low
+  (0.25), and the sub-period split actually became MORE balanced. This is the
+  value of out-of-sample extension -- a more honest, more trustworthy number.
+
+--------------------------------------------------------------------------------
+  KNOWN LIMITATIONS
+--------------------------------------------------------------------------------
+  * Sample is ~4.5 yrs (roughly one crypto cycle); unseen regimes are untested.
+  * Both sleeves are crypto -- diversification is WITHIN crypto, not market-
+    neutral; a crypto-wide structural break would hit both.
+  * ~300+ trades total, low win-rate / high payoff; tail winners matter.
+  * Net of a per-bar cost model; excludes funding/borrow and large-size slippage.
+
+  Reproduce:
+    python scripts/run_portfolio_multi.py
+    python scripts/overfitting_test.py
+================================================================================
