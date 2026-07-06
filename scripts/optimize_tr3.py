@@ -25,8 +25,8 @@ from sklearn.preprocessing import StandardScaler
 TRAIN_END = "2019-12-31"
 VAL_END = "2021-12-31"
 K_CANDIDATES = (3,)
-RESTARTS = 5
-MAX_ITER = 500
+RESTARTS = 10
+MAX_ITER = 1500
 RANDOM_SEED = 42
 
 
@@ -107,13 +107,16 @@ def fit_hmm(X: np.ndarray, lengths: list[int], k: int, seed: int) -> GaussianHMM
         n_components=k,
         covariance_type="diag",
         n_iter=MAX_ITER,
-        tol=1e-3,
+        tol=1e-4,
         random_state=seed,
         min_covar=1e-5,
         startprob_prior=sp,
         transmat_prior=tp,
     )
     model.fit(X, lengths=lengths)
+    if model.covariance_type == "diag" and model.covars_.ndim == 3:
+        model._covars_ = np.array([np.diag(v) for v in model._covars_])
+        model.covariance_type = "full"
     return model
 
 
@@ -132,6 +135,34 @@ def decode(model: GaussianHMM, X: np.ndarray):
     states = model.predict(X)
     _, gamma = model.score_samples(X)
     return states, gamma
+
+
+def enforce_min_dwell_causal(path: np.ndarray, min_run: int = 3) -> np.ndarray:
+    """Causal min-dwell: delays transition until new state persists min_run bars."""
+    p = np.asarray(path, dtype=int)
+    if min_run <= 1 or len(p) == 0:
+        return p.copy()
+    out = p.copy()
+    current = out[0]
+    pending = None
+    pending_count = 0
+    for i in range(1, len(out)):
+        s = out[i]
+        if s == current:
+            pending = None
+            pending_count = 0
+        else:
+            if pending is None or pending != s:
+                pending = s
+                pending_count = 1
+            else:
+                pending_count += 1
+            if pending_count >= min_run:
+                current = pending
+                pending = None
+                pending_count = 0
+        out[i] = current
+    return out
 
 
 def enforce_min_dwell_gamma(path: np.ndarray, gamma: np.ndarray, min_run: int = 3) -> np.ndarray:
@@ -544,10 +575,11 @@ def main():
             window_states = final.predict(X_window)
             st_te_online[t] = window_states[-1]
     
-    # Apply min_dwell smoothing
+    # Apply causal min-dwell (no future data).
+    # Previously this used enforce_min_dwell_gamma with decode(final, Xs_te),
+    # which ran Viterbi on the full test set — that reintroduced lookahead bias.
     if args.min_dwell and args.min_dwell > 1:
-        _, g_te = decode(final, Xs_te)
-        st_te_online = enforce_min_dwell_gamma(st_te_online, g_te, min_run=args.min_dwell)
+        st_te_online = enforce_min_dwell_causal(st_te_online, min_run=args.min_dwell)
     
     # Create lagged state series
     last_trv_state = final.predict(Xs_trv)[-1]
@@ -595,9 +627,10 @@ def main():
         if best_row is None:
             best_row = m
         else:
-            key_a = (m["WinRate"], m["ProfitFactor"], m["CAGR"])
-            key_b = (best_row["WinRate"], best_row["ProfitFactor"], best_row["CAGR"])
-            if key_a > key_b:
+            # Primary: daily Sharpe. Tie-break: CAGR then profit factor.
+            def _score(r):
+                return (r.get("Sharpe_Daily", -999), r.get("CAGR", -999), r.get("ProfitFactor", -999))
+            if _score(m) > _score(best_row):
                 best_row = m
 
         if i % 25 == 0:
@@ -611,10 +644,11 @@ def main():
 
     best_out = {
         "best_params": json.loads(best_row["params"]),
+        "Sharpe_Daily": best_row.get("Sharpe_Daily"),
+        "Sharpe": best_row["Sharpe"],
+        "CAGR": best_row["CAGR"],
         "WinRate": best_row["WinRate"],
         "ProfitFactor": best_row["ProfitFactor"],
-        "CAGR": best_row["CAGR"],
-        "Sharpe": best_row["Sharpe"],
         "NumTrades": best_row["NumTrades"],
     }
     best_path = out_dir / "opt_best.json"

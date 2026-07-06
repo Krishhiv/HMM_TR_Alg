@@ -339,8 +339,11 @@ def simulate_tr3(
         })
     
     trade_log = pd.DataFrame(trades, columns=cols)
-    strat_rets = pd.Series(pos, index=df.index) * df["ret_oo"]
-    
+    # pos[i]=1 means we entered at Open[i]; the return from that entry accrues
+    # at Open[i+1], i.e. ret_oo[i+1].  Shifting pos forward by 1 aligns each
+    # holding-period return with the bar where it is earned.
+    strat_rets = pd.Series(pos, index=df.index).shift(1).fillna(0.0) * df["ret_oo"]
+
     return trade_log, strat_rets
 
 

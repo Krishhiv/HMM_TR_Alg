@@ -23,6 +23,7 @@ from src.hmm.model import (
     pick_best_model,
     decode_states,
     enforce_min_dwell,
+    enforce_min_dwell_causal,
     lengths_by_year,
     HMM_FEATURES,
 )
@@ -38,6 +39,10 @@ def main():
     parser.add_argument("--train-end", default="2019-12-31")
     parser.add_argument("--val-end", default="2021-12-31")
     parser.add_argument("--min-dwell", type=int, default=3)
+    parser.add_argument(
+        "--viterbi-window", type=int, default=90,
+        help="Lookback bars for causal sliding-window Viterbi on the test set",
+    )
     args = parser.parse_args()
     
     out_dir = PROJECT_ROOT / args.out_dir
@@ -84,20 +89,44 @@ def main():
     print("Training HMM on Train+Val...")
     Xs_trv = np.vstack([Xs_tr, Xs_va])
     len_trv = lengths_by_year(pd.concat([df_tr, df_va]).index)
-    
+
     model = fit_hmm(Xs_trv, len_trv, k=3, seed=101)
-    
-    # Decode states
+
+    # Decode train+val with full Viterbi (in-sample — no lookahead concern).
     st_trv, g_trv = decode_states(model, Xs_trv)
-    st_te, g_te = decode_states(model, Xs_te)
-    
-    # Apply minimum dwell
     if args.min_dwell > 1:
         st_trv = enforce_min_dwell(st_trv, g_trv, min_run=args.min_dwell)
-        st_te = enforce_min_dwell(st_te, g_te, min_run=args.min_dwell)
-    
-    # Build lagged state series for test period
-    last_trv_state = st_trv[-1]
+
+    # ===== Causal sliding-window Viterbi on the test set =====
+    # Running full Viterbi over Xs_te at once is lookahead: state at t would
+    # use future observations t+1..T.  Instead, for each test day t we run
+    # Viterbi on a window [t-lookback, t-1] (excludes today's observation)
+    # and take the last predicted state, which is what we would know at market
+    # open on day t.
+    print(f"Decoding test states (causal sliding-window, window={args.viterbi_window})...")
+    Xs_all = np.vstack([Xs_trv, Xs_te])
+    trv_len = len(Xs_trv)
+    n_test = len(Xs_te)
+    st_te = np.zeros(n_test, dtype=int)
+
+    for t in range(n_test):
+        idx = trv_len + t          # position of this test day in the combined array
+        start = max(0, idx - args.viterbi_window)
+        X_win = Xs_all[start:idx]  # excludes today → no lookahead
+        if len(X_win) == 0:
+            st_te[t] = int(st_trv[-1])  # seed with last train+val state
+        else:
+            st_te[t] = model.predict(X_win)[-1]
+
+    # Causal min-dwell on the online test states (no posteriors needed)
+    if args.min_dwell > 1:
+        st_te = enforce_min_dwell_causal(st_te, min_run=args.min_dwell)
+
+    # Build lagged state series for test period.
+    # st_te[t] is the state known at open of test day t (derived from data up
+    # to t-1), so it IS already the lagged series — we prepend the last
+    # train+val state so the very first test day also has a valid lag value.
+    last_trv_state = int(st_trv[-1])
     last_trv_day = pd.concat([df_tr, df_va]).index[-1]
     st_series = pd.Series(st_te, index=df_te.index)
     st_series = pd.concat([pd.Series([last_trv_state], index=[last_trv_day]), st_series])

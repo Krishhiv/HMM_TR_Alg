@@ -142,11 +142,14 @@ def compute_hourly_features(df: pd.DataFrame) -> pd.DataFrame:
     df["MOM_ema50_slope"] = df["MOM_ema50"].pct_change()
     
     d_up, d_dn, d_rng = donchian(df["High"], df["Low"], n=20)
-    df["MOM_donchian20_up"] = d_up
-    df["MOM_donchian20_dn"] = d_dn
-    df["MOM_donchian20_rng"] = d_rng
-    df["MOM_dist_to_donchian_up"] = (df["Close"] - d_up) / d_up
-    df["MOM_dist_to_donchian_dn"] = (df["Close"] - d_dn) / d_dn
+    # Shift by 1 so the channel excludes the current bar's High/Low.
+    # Without the shift, High[t] >= Close[t] guarantees Close > channel is
+    # always False, silently killing the Donchian breakout signal.
+    df["MOM_donchian20_up"] = d_up.shift(1)
+    df["MOM_donchian20_dn"] = d_dn.shift(1)
+    df["MOM_donchian20_rng"] = d_rng.shift(1)
+    df["MOM_dist_to_donchian_up"] = (df["Close"] - df["MOM_donchian20_up"]) / df["MOM_donchian20_up"]
+    df["MOM_dist_to_donchian_dn"] = (df["Close"] - df["MOM_donchian20_dn"]) / df["MOM_donchian20_dn"]
     
     df["MOM_roc_24h"] = df["Close"].pct_change(24)
     

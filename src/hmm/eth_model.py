@@ -156,18 +156,13 @@ def fit_hmm(
         transmat_prior=tp,
     )
     model.fit(X, lengths=lengths)
-    print(f"DEBUG fit_hmm ETH: Type={model.covariance_type}, Shape={model.covars_.shape}")
-    
-    # Auto-correct type if mismatch (hmmlearn quirk?)
+
+    # hmmlearn 0.3.x bug: same as model.py — build (k, n, n) from _covars_ (k, n)
+    # and switch to "full" so predict/score_samples use the correct density path.
     if model.covariance_type == "diag" and model.covars_.ndim == 3:
-        # print("WARNING: ETH Model produced full covars but type is diag. Switching to full.")
+        model._covars_ = np.array([np.diag(v) for v in model._covars_])
         model.covariance_type = "full"
-        
-    # Safety Check: If full, ensure 3D storage
-    if model.covariance_type == "full" and model.covars_.ndim == 2:
-        print("DEBUG ETH: Inflating 2D to 3D")
-        model._covars_ = np.array([np.diag(c) for c in model.covars_])
-        
+
     return model
 
 
@@ -185,11 +180,10 @@ def fit_hmm_warm_start(
     # Use ETH priors
     sp, tp = compute_priors(k)
     
-    # Robustly infer covariance type from the actual shape
-    if prev_model.covars_.ndim == 3:
-        cov_type = "full"
-    else:
-        cov_type = "diag"
+    # Always use "diag" — that's what all ETH models are trained with.
+    # (The old ndim==3 check was incorrect: the covars_ property always returns
+    # (k, n, n) for "diag" models in hmmlearn 0.3.x regardless of _covars_ shape.)
+    cov_type = prev_model.covariance_type
     
     # Initialize with previous model's parameters
     model = GaussianHMM(
@@ -216,6 +210,11 @@ def fit_hmm_warm_start(
     
     # Now fit properly on full data
     model.fit(X, lengths=lengths)
+
+    if model.covariance_type == "diag" and model.covars_.ndim == 3:
+        model._covars_ = np.array([np.diag(v) for v in model._covars_])
+        model.covariance_type = "full"
+
     return model
 
 

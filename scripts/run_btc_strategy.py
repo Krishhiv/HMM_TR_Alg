@@ -32,15 +32,15 @@ from scripts.run_holdout_ect import (
 )
 
 def run_btc_walkforward(
-    daily_df: pd.DataFrame, 
-    hourly_df: pd.DataFrame, 
+    daily_df: pd.DataFrame,
+    hourly_df: pd.DataFrame,
     train_end: str = "2019-12-31",
     val_end: str = "2021-12-31",
     rebalance_days: int = 30,
-    window_days: int = 730, # 2 years
+    window_days: int = 730,
     viterbi_window: int = 60,
-    min_dwell: int = 1
-) -> pd.DataFrame:
+    min_dwell: int = 1,
+) -> tuple[pd.DataFrame, pd.Series, pd.Series, pd.Series]:
     """
     Run Walk-Forward Analysis for BTC.
     
@@ -227,7 +227,7 @@ def run_btc_walkforward(
             d_end = ex.normalize()
             active_mask.loc[d_start:d_end] = True
             
-    return trades, daily_rets, active_mask
+    return trades, daily_rets, active_mask, states_series
 
 def main():
     parser = argparse.ArgumentParser()
@@ -240,19 +240,19 @@ def main():
     d = pd.read_csv(args.daily)
     d["Date"] = pd.to_datetime(d["Date"], utc=True)
     d = d.set_index("Date").sort_index()
-    
+
     h = pd.read_csv(args.hourly)
     h["Date"] = pd.to_datetime(h["Date"], utc=True)
     h = h.set_index("Date").sort_index()
-    
-    # Run
-    trades = run_btc_walkforward(d, h)
-    
+
+    # run_btc_walkforward returns (trades, daily_rets, active_mask)
+    trades, _daily_rets, _active_mask, _states = run_btc_walkforward(d, h)
+
     # Save
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     trades.to_csv(out_path, index=False)
-    
+
     # Stats
     m = metrics_from_trades(apply_ect(trades), "net_ret_scaled")
     print("BTC Walk-Forward Results:")

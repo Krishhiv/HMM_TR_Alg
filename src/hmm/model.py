@@ -20,12 +20,12 @@ from sklearn.preprocessing import StandardScaler
 DEFAULT_CONFIG = {
     "n_components": 3,
     "covariance_type": "diag",
-    "n_iter": 500,
-    "tol": 1e-3,
+    "n_iter": 1500,
+    "tol": 1e-4,
     "min_covar": 1e-5,
     "random_state": 42,
-    "restarts": 5,
-    "min_dwell": 3,  # Minimum state duration in days
+    "restarts": 10,
+    "min_dwell": 3,
 }
 
 # Features used for HMM training
@@ -129,13 +129,16 @@ def fit_hmm(
         transmat_prior=tp,
     )
     model.fit(X, lengths=lengths)
-    print(f"DEBUG fit_hmm: Type={model.covariance_type}, Shape={model.covars_.shape}")
-    
-    # Auto-correct type if mismatch (hmmlearn quirk?)
+
+    # hmmlearn 0.3.x bug: for covariance_type="diag" the covars_ property
+    # returns (k, n, n) diagonal matrices, but _log_multivariate_normal_density_diag
+    # expects (k, n_features) plain variances — so predict() fails with a broadcast
+    # error.  Fix: build proper (k, n, n) full-diagonal matrices from the raw
+    # _covars_ (which is (k, n)) and switch the model to covariance_type="full".
     if model.covariance_type == "diag" and model.covars_.ndim == 3:
-        print("WARNING: Model produced full covars but type is diag. Switching to full.")
+        model._covars_ = np.array([np.diag(v) for v in model._covars_])
         model.covariance_type = "full"
-        
+
     return model
 
 
@@ -228,27 +231,18 @@ def align_states(
         init_params="",
     )
     
-    # Initialize dimensions (n_features)
-    # n_components is already set, but we need n_features from X_sample
     new_model._init(X_sample)
-    print(f"DEBUG align_states: NewModel Init Shape={new_model._covars_.shape}")
-    
-    print(f"DEBUG align_states: Source Covars Shape={model.covars_.shape}")
-    
+
     new_model.startprob_ = model.startprob_[order]
     new_model.transmat_ = model.transmat_[order][:, order]
     new_model.means_ = model.means_[order]
     raw_covars = model.covars_[order]
-    
-    # If type is full but covars are 2D (diag), inflate to 3D
+
     if new_model.covariance_type == "full" and raw_covars.ndim == 2:
-        print("DEBUG align_states: Inflating 2D covars to 3D (Full)")
         raw_covars = np.array([np.diag(c) for c in raw_covars])
-        
+
     new_model._covars_ = raw_covars
-    
-    print(f"DEBUG align_states: InType={model.covariance_type}, OutType={new_model.covariance_type}, OutShape={new_model._covars_.shape}")
-    
+
     return new_model
 
 
@@ -329,6 +323,41 @@ def enforce_min_dwell(
             i = j
     
     return p
+
+
+def enforce_min_dwell_causal(path: np.ndarray, min_run: int = 3) -> np.ndarray:
+    """
+    Causal min-dwell filter: delays a state transition until the new state
+    has persisted for ``min_run`` consecutive observations. Uses NO future data,
+    making it safe for live / walk-forward use.
+    """
+    p = np.asarray(path, dtype=int)
+    if min_run <= 1 or len(p) == 0:
+        return p.copy()
+
+    out = p.copy()
+    current = out[0]
+    pending = None
+    pending_count = 0
+
+    for i in range(1, len(out)):
+        s = out[i]
+        if s == current:
+            pending = None
+            pending_count = 0
+        else:
+            if pending is None or pending != s:
+                pending = s
+                pending_count = 1
+            else:
+                pending_count += 1
+            if pending_count >= min_run:
+                current = pending
+                pending = None
+                pending_count = 0
+        out[i] = current
+
+    return out
 
 
 class BTCRegimeDetector:

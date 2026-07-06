@@ -28,8 +28,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 TRAIN_END = "2019-12-31"
 VAL_END = "2021-12-31"
 K_CANDIDATES = (3,)
-RESTARTS = 5
-MAX_ITER = 500
+RESTARTS = 10
+MAX_ITER = 1500
 RANDOM_SEED = 42
 
 
@@ -110,13 +110,16 @@ def fit_hmm(X: np.ndarray, lengths: list[int], k: int, seed: int) -> GaussianHMM
         n_components=k,
         covariance_type="diag",
         n_iter=MAX_ITER,
-        tol=1e-3,
+        tol=1e-4,
         random_state=seed,
         min_covar=1e-5,
         startprob_prior=sp,
         transmat_prior=tp,
     )
     model.fit(X, lengths=lengths)
+    if model.covariance_type == "diag" and model.covars_.ndim == 3:
+        model._covars_ = np.array([np.diag(v) for v in model._covars_])
+        model.covariance_type = "full"
     return model
 
 
